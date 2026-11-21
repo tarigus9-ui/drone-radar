@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">رادار الدرون</string>
+    <string name="ch_service">مسح مستمر</string>
+    <string name="ch_alert">تنبيه درون قريب</string>
+    <string name="service_title">رادار الدرون يعمل</string>
+    <string name="service_text">يستمع لإشارات Remote ID • المرصود الآن: %1$d</string>
+    <string name="alert_title">⚠️ تم رصد درون قريب</string>
+    <string name="op_known">موقع المشغل معروف</string>
+    <string name="op_unknown">موقع المشغل غير متوفر</string>
+    <string name="scanning">جارٍ البحث عن إشارات…</string>
+    <string name="found">تم رصد %1$d درون</string>
+    <string name="perm_needed">يجب منح أذونات الموقع والبلوتوث والواي فاي</string>
+    <string name="start">تشغيل</string>
+    <string name="stop">إيقاف</string>
+    <string name="center">موقعي</string>
+    <string name="legend">🔴 الدرون   🟢 المشغل   ━ خط الربط</string>
+    <string name="operator">المشغل (الطيار)</string>
+    <string name="operator_id">رقم المشغل</string>
+    <string name="source">المصدر</string>
+    <string name="height">الارتفاع</string>
+    <string name="alt">الارتفاع عن سطح البحر</string>
+    <string name="speed">السرعة</string>
+    <string name="heading">الاتجاه</string>
+    <string name="bg_title">التنبيه والتطبيق مغلق</string>
+    <string name="bg_msg">لكي يصلك تنبيه حتى عند إغلاق التطبيق، اختر \"السماح طوال الوقت\" لإذن الموقع.</string>
+    <string name="ok">موافق</string>
+    <string name="later">لاحقاً</string>
+</resources>
