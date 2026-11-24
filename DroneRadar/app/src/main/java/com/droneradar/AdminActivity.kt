@@ -88,7 +88,7 @@ class AdminActivity : AppCompatActivity() {
     }
 
     // ------------------------------------------------------------------ load
-    private fun reload() = lifecycleScope.launch {
+    private fun reload(): kotlinx.coroutines.Job = lifecycleScope.launch {
         info.text = getString(R.string.loading)
         val (rc, rb) = io { Backend.call("GET", "/rest/v1/regions?select=id,name,country_code&order=name") }
         val (sc, sb) = io { Backend.call("POST", "/rest/v1/rpc/list_sites", "{}") }
@@ -192,7 +192,7 @@ class AdminActivity : AppCompatActivity() {
     }
 
     // ------------------------------------------------------------------ helpers
-    private fun rpc(fn: String, args: JSONObject) = lifecycleScope.launch {
+    private fun rpc(fn: String, args: JSONObject): kotlinx.coroutines.Job = lifecycleScope.launch {
         val (code, body) = io { Backend.call("POST", "/rest/v1/rpc/$fn", args.toString()) }
         if (code in 200..299) { toast(getString(R.string.saved)); reload() } else toast(Backend.errorText(code, body))
     }
