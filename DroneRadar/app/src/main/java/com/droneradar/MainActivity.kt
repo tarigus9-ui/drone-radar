@@ -308,7 +308,7 @@ class MainActivity : AppCompatActivity() {
     private fun render(drones: List<DroneInfo>) {
         val sb = StringBuilder()
         for (d in drones) {
-            sb.append(if (Whitelist.contains(d.serial)) "✅ " else if (d.remote) "📡 " else "• ").append(d.label).append(" — ").append(d.remoteInfo ?: d.source)
+            sb.append(if (d.spoof.isNotEmpty()) "⚠️ " else if (SpoofCheck.silentBecauseWhitelisted(d)) "✅ " else if (d.remote) "📡 " else "• ").append(d.label).append(" — ").append(d.remoteInfo ?: d.source)
                 .append(if (d.opLat != null) " — 🟢" else "").append('\n')
         }
         status.text = if (drones.isEmpty()) getString(R.string.scanning) else getString(R.string.found, drones.size)
@@ -328,10 +328,12 @@ class MainActivity : AppCompatActivity() {
                 m.addDot(L_DRONES, it.first, it.second, Color.rgb(0, 200, 83), 18,
                     getString(R.string.operator), "${d.operatorId ?: ""}  ${d.label}")
             }
-            val ok = Whitelist.contains(d.serial)
+            val sus = d.spoof.isNotEmpty()
+            val ok = SpoofCheck.silentBecauseWhitelisted(d)
             dronePt?.let {
-                m.addDot(L_DRONES, it.first, it.second, if (ok) Color.rgb(0, 150, 136) else Color.rgb(229, 57, 53), 22,
-                    if (ok) "✅ ${Whitelist.label(d.serial)} • ${d.label}" else d.label, details(d))
+                val color = when { sus -> Color.rgb(170, 0, 255); ok -> Color.rgb(0, 150, 136); else -> Color.rgb(229, 57, 53) }
+                val title = when { sus -> "⚠️ ${getString(R.string.suspicious)} • ${d.label}"; ok -> "✅ ${Whitelist.label(d.serial)} • ${d.label}"; else -> d.label }
+                m.addDot(L_DRONES, it.first, it.second, color, 22, title, details(d))
             }
             if (d.key == focusKey) focus = opPt ?: dronePt
         }
@@ -344,7 +346,8 @@ class MainActivity : AppCompatActivity() {
         else appendLine("${getString(R.string.source)}: ${d.source}  (${d.rssi} dBm)")
         appendLine("${getString(R.string.height)}: ${f(d.height)} m  |  ${getString(R.string.speed)}: ${f(d.speed)} m/s")
         d.operatorId?.let { appendLine("${getString(R.string.operator_id)}: $it") }
-        d.description?.let { append(it) }
+        d.description?.let { appendLine(it) }
+        if (d.spoof.isNotEmpty()) append("⚠️ ").append(SpoofCheck.describe(this@MainActivity, d.spoof))
     }.trim()
 
     companion object {

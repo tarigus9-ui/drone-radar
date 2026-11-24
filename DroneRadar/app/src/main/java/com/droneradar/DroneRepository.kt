@@ -23,6 +23,10 @@ data class DroneInfo(
     var remoteInfo: String? = null,       // "site • reporter"
     var opTrail: List<Pair<Double, Double>> = emptyList(),     // live path of the operator
     var droneTrail: List<Pair<Double, Double>> = emptyList(),  // live path of the drone
+    var idType: Int? = null,                 // Basic ID type (1 = serial number)
+    var spoof: Set<String> = emptySet(),     // forgery signs (SpoofCheck / server)
+    var spoofAlerted: Boolean = false,
+    var posTime: Long = 0L,                  // when lat/lon last changed
 ) {
     val label: String get() = serial ?: operatorId ?: key
 }
@@ -60,17 +64,26 @@ object DroneRepository {
     @Synchronized
     fun update(key: String, source: String, rssi: Int, decode: (DroneInfo) -> Boolean): Pair<DroneInfo, Boolean>? {
         val d = map[key] ?: DroneInfo(key)
+        val pLat = d.lat; val pLon = d.lon; val pT = d.posTime
         if (!decode(d)) return null
-        d.source = source; d.rssi = rssi; d.lastSeen = System.currentTimeMillis()
+        val now = System.currentTimeMillis()
+        d.source = source; d.rssi = rssi; d.lastSeen = now
+        if (d.lat != pLat || d.lon != pLon) {
+            SpoofCheck.local(d, pLat, pLon, if (pT == 0L) now else pT, Backend.myLocation)
+            d.posTime = now
+        } else SpoofCheck.local(d, null, null, now, Backend.myLocation)
         recordTrail(d)
         map[key] = d
         // Merge records that share a serial (same drone seen on BLE + Wi-Fi)
-        val ready = d.serial != null || System.currentTimeMillis() - d.firstSeen > 3_000
+        val ready = d.serial != null || now - d.firstSeen > 3_000
         val isNew = ready && !d.alerted && map.values.none { it !== d && it.serial != null && it.serial == d.serial && it.alerted }
         if (isNew) d.alerted = true
+        // a drone that turns out to be forged gets a second, explicit alarm
+        val spoofNew = d.spoof.isNotEmpty() && !d.spoofAlerted && d.alerted
+        if (spoofNew) d.spoofAlerted = true
         publish()
         Backend.onDetection(d)
-        return d to isNew
+        return d to (isNew || spoofNew)
     }
 
     /** Drone reported by another staff member (from the server). Never re-uploaded. */

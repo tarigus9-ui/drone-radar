@@ -163,9 +163,11 @@ class HistoryActivity : AppCompatActivity() {
         val h = if (r.isNull("max_height")) "—" else "%.0f".format(Locale.US, r.optDouble("max_height"))
         val op = if (r.isNull("op_lat")) getString(R.string.op_unknown) else getString(R.string.op_known)
         val auth = if (r.optBoolean("authorized")) "  " + getString(R.string.authorized) else ""
+        val flags = SpoofCheck.fromJson(r.optJSONArray("spoof_flags"))
+        val spoofLine = if (flags.isEmpty()) "" else "\n⚠️ " + SpoofCheck.describe(this, flags)
         return TextView(this).apply {
             text = "🚁 $serial$auth\n🏢 $site • ${r.str("region") ?: ""}\n🕒 $start ← $end\n" +
-                "👁 ${r.str("reporters") ?: ""} • ${r.optInt("points")} ${getString(R.string.points)} • ⬆ $h m • $op"
+                "👁 ${r.str("reporters") ?: ""} • ${r.optInt("points")} ${getString(R.string.points)} • ⬆ $h m • $op" + spoofLine
             textSize = 14f
             setPadding(pad, pad, pad, pad)
             setBackgroundColor(0x12000000)
