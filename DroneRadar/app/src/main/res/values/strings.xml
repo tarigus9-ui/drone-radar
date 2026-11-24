@@ -26,4 +26,17 @@
     <string name="bg_msg">لكي يصلك تنبيه حتى عند إغلاق التطبيق، اختر \"السماح طوال الوقت\" لإذن الموقع.</string>
     <string name="ok">موافق</string>
     <string name="later">لاحقاً</string>
+    <string name="login_title">رادار الدرون</string>
+    <string name="login_sub">سجّل الدخول بالحساب الذي أنشأه لك مدير الأمن</string>
+    <string name="email">البريد الإلكتروني</string>
+    <string name="password">كلمة المرور</string>
+    <string name="login">دخول</string>
+    <string name="offline_mode">استخدام بدون حساب (بدون إرسال)</string>
+    <string name="fill_fields">أدخل البريد وكلمة المرور</string>
+    <string name="acc_online">☁️ %1$s • أُرسل %2$d • بالانتظار %3$d</string>
+    <string name="acc_offline">☁️ غير متصل بالمنصة — اضغط لتسجيل الدخول</string>
+    <string name="acc_error">⚠️ %1$s</string>
+    <string name="logout_q">تسجيل الخروج من %1$s؟</string>
+    <string name="logout">خروج</string>
+    <string name="cancel">إلغاء</string>
 </resources>

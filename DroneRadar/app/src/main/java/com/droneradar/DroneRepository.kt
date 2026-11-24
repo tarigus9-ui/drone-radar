@@ -41,6 +41,7 @@ object DroneRepository {
         val isNew = !d.alerted && map.values.none { it !== d && it.serial != null && it.serial == d.serial && it.alerted }
         if (isNew) d.alerted = true
         publish()
+        Backend.onDetection(d)
         return d to isNew
     }
 

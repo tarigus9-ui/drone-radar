@@ -45,6 +45,7 @@ class ScanService : Service() {
     override fun onCreate() {
         super.onCreate()
         Alerts.createChannels(this)
+        Backend.init(this)
         val type = if (Build.VERSION.SDK_INT >= 29) ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION else 0
         ServiceCompat.startForeground(this, Alerts.SERVICE_NOTIF_ID, serviceNotification(0), type)
         startBle()
@@ -54,12 +55,24 @@ class ScanService : Service() {
             DroneRepository.drones.collect { list -> updateServiceNotification(list.size) }
         }
         scope.launch { while (isActive) { delay(10_000); DroneRepository.prune() } }
+        // Platform: guard location, upload queue, heartbeat
+        Backend.startLocation(this)
+        scope.launch(Dispatchers.IO) {
+            var tick = 0
+            while (isActive) {
+                runCatching { Backend.flush() }
+                if (tick % 12 == 0) runCatching { Backend.heartbeat(scanning = true) }
+                tick++
+                delay(5_000)
+            }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int) = START_STICKY
 
     override fun onDestroy() {
         scope.cancel()
+        Backend.stopLocation(this)
         runCatching { bleScanner()?.stopScan(bleCallback) }
         runCatching { unregisterReceiver(wifiReceiver) }
         awareSession?.close()
