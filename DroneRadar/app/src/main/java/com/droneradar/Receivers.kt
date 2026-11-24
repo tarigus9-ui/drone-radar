@@ -10,6 +10,7 @@ import android.os.Build
 /** Woken by Android for BLE Remote ID hits, even when the app is fully closed. */
 class BleHitReceiver : BroadcastReceiver() {
     override fun onReceive(ctx: Context, intent: Intent) {
+        Backend.init(ctx)
         val results: List<ScanResult> = if (Build.VERSION.SDK_INT >= 33)
             intent.getParcelableArrayListExtra(BluetoothLeScanner.EXTRA_LIST_SCAN_RESULT, ScanResult::class.java).orEmpty()
         else @Suppress("DEPRECATION")

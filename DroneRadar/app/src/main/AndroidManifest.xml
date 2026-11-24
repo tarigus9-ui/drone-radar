@@ -50,6 +50,11 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".LoginActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
         <!-- Always-on scanner -->
         <service
             android:name=".ScanService"

@@ -31,6 +31,10 @@
             android:layout_width="match_parent" android:layout_height="wrap_content"
             android:maxLines="6" android:textColor="#333" android:textSize="13sp" />
 
+        <TextView android:id="@+id/account"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="4dp" android:textColor="#1565C0" android:textSize="13sp" />
+
         <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
             android:layout_marginTop="4dp" android:text="@string/legend"
             android:textColor="#666" android:textSize="12sp" />

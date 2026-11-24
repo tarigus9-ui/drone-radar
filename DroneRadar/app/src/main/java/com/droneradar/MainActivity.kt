@@ -36,6 +36,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var map: MapView
     private lateinit var status: TextView
     private lateinit var list: TextView
+    private lateinit var account: TextView
     private lateinit var toggle: Button
     private lateinit var myLoc: MyLocationNewOverlay
     private val droneOverlays = mutableListOf<org.osmdroid.views.overlay.Overlay>()
@@ -65,12 +66,21 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Configuration.getInstance().userAgentValue = packageName
+        Backend.init(this)
+        val offlineOk = getSharedPreferences("backend", MODE_PRIVATE).getBoolean("offline_ok", false)
+        if (Backend.isConfigured && !Backend.isLoggedIn && !offlineOk) {
+            startActivity(Intent(this, LoginActivity::class.java))
+            finish()
+            return
+        }
         setContentView(R.layout.activity_main)
         Alerts.createChannels(this)
 
         map = findViewById(R.id.map)
         status = findViewById(R.id.status)
         list = findViewById(R.id.list)
+        account = findViewById(R.id.account)
+        account.setOnClickListener { onAccountClick() }
         toggle = findViewById(R.id.toggle)
 
         map.setTileSource(TileSourceFactory.MAPNIK)
@@ -102,6 +112,19 @@ class MainActivity : AppCompatActivity() {
                 DroneRepository.drones.collect { render(it) }
             }
         }
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                Backend.status.collect { st ->
+                    account.visibility = if (Backend.isConfigured) android.view.View.VISIBLE else android.view.View.GONE
+                    account.text = when {
+                        !st.loggedIn -> getString(R.string.acc_offline)
+                        st.lastError != null && st.pending > 0 -> getString(R.string.acc_error, st.lastError) +
+                            "  " + getString(R.string.acc_online, st.email ?: "", st.sent, st.pending)
+                        else -> getString(R.string.acc_online, st.email ?: "", st.sent, st.pending)
+                    }
+                }
+            }
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -110,8 +133,24 @@ class MainActivity : AppCompatActivity() {
         render(DroneRepository.drones.value)
     }
 
-    override fun onResume() { super.onResume(); map.onResume() }
-    override fun onPause() { super.onPause(); map.onPause() }
+    override fun onResume() { super.onResume(); if (::map.isInitialized) map.onResume() }
+    override fun onPause() { super.onPause(); if (::map.isInitialized) map.onPause() }
+
+    private fun onAccountClick() {
+        if (!Backend.isLoggedIn) {
+            getSharedPreferences("backend", MODE_PRIVATE).edit().putBoolean("offline_ok", false).apply()
+            startActivity(Intent(this, LoginActivity::class.java)); return
+        }
+        AlertDialog.Builder(this)
+            .setMessage(getString(R.string.logout_q, Backend.email ?: ""))
+            .setPositiveButton(R.string.logout) { _, _ ->
+                Backend.logout()
+                getSharedPreferences("backend", MODE_PRIVATE).edit().putBoolean("offline_ok", false).apply()
+                startActivity(Intent(this, LoginActivity::class.java)); finish()
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
 
     private fun hasBase() = basePerms.all {
         ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED

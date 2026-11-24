@@ -9,9 +9,13 @@ android {
         applicationId = "com.droneradar"
         minSdk = 26          // Android 8.0 (مطلوب لـ Wi-Fi NaN)
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.1"
+        // Platform server (Supabase). The anon key is public by design; data is protected by RLS.
+        buildConfigField("String", "SUPABASE_URL", "\"${project.findProperty("SUPABASE_URL") ?: ""}\"")
+        buildConfigField("String", "SUPABASE_ANON_KEY", "\"${project.findProperty("SUPABASE_ANON_KEY") ?: ""}\"")
     }
+    buildFeatures { buildConfig = true }
     buildTypes { release { isMinifyEnabled = false } }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -25,4 +29,5 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     implementation("org.osmdroid:osmdroid-android:6.1.20")   // خريطة OpenStreetMap بدون مفتاح API
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")     // اتصال السيرفر
 }
