@@ -216,6 +216,14 @@ create policy "own device update" on public.devices for update
 create policy "company devices" on public.devices for select
   using (company_id = public.my_company());
 
+-- ---------- API access (needed when "auto-grant new tables" is off) ----------
+grant usage on schema public to anon, authenticated;
+grant select on public.companies, public.regions, public.sites, public.profiles to authenticated;
+grant insert, update, delete on public.regions, public.sites to authenticated;
+grant select, insert on public.detections to authenticated;
+grant select, insert, update on public.devices to authenticated;
+grant execute on function public.my_profile(), public.my_company() to authenticated;
+
 -- ---------- Realtime (live map for managers — next phase) ----------
 alter publication supabase_realtime add table public.detections;
 alter publication supabase_realtime add table public.devices;
