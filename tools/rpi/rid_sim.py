@@ -109,31 +109,106 @@ def ble_adv_payload(msg, counter):
 # ----------------------------------------------------------------- Bluetooth (raw HCI, needs root)
 HCIDEVUP = 0x400448C9
 
+class HciError(Exception):
+    pass
+
 class Hci:
+    """Raw HCI socket. Reads Command Complete events so we know whether the controller accepted each command."""
     def __init__(self, dev=HCI_DEV):
         self.s = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_RAW, socket.BTPROTO_HCI)
         try:
             fcntl.ioctl(self.s.fileno(), HCIDEVUP, dev)
-        except OSError as e:
-            if e.errno != 114:          # EALREADY = already up
-                pass
+        except OSError:
+            pass                        # already up
         self.s.bind((dev,))
+        # receive only events: Command Complete (0x0E) and Command Status (0x0F)
+        SOL_HCI, HCI_FILTER = 0, 2
+        flt = struct.pack("<IIIH", 1 << 4, (1 << 0x0E) | (1 << 0x0F), 0, 0)
+        self.s.setsockopt(SOL_HCI, HCI_FILTER, flt)
+        self.s.settimeout(1.0)
+        self.mode = None                # "legacy" or "extended"
 
-    def cmd(self, ogf, ocf, params=b""):
+    def cmd(self, ogf, ocf, params=b"", check=True):
         opcode = (ogf << 10) | ocf
         self.s.send(struct.pack("<BHB", 0x01, opcode, len(params)) + params)
-        time.sleep(0.01)
+        if not check:
+            return 0
+        deadline = time.time() + 1.0
+        while time.time() < deadline:
+            try:
+                pkt = self.s.recv(260)
+            except socket.timeout:
+                break
+            if len(pkt) < 6 or pkt[0] != 0x04:
+                continue
+            ev = pkt[1]
+            if ev == 0x0E and struct.unpack_from("<H", pkt, 4)[0] == opcode:
+                return pkt[6] if len(pkt) > 6 else 0
+            if ev == 0x0F and struct.unpack_from("<H", pkt, 5)[0] == opcode:
+                if pkt[3] != 0:
+                    return pkt[3]
+        return 0xFF                     # no answer
 
-    def adv_enable(self, on):
-        self.cmd(0x08, 0x000A, bytes([1 if on else 0]))
+    # ---- legacy advertising (Bluetooth 4 commands)
+    def _legacy_start(self):
+        self.cmd(0x08, 0x000A, b"\x00")                                   # disable (ignore result)
+        iv = int(100 / 0.625)
+        p = struct.pack("<HHBBB6sBB", iv, iv, 0x03, 0x00, 0x00, bytes(6), 0x07, 0x00)   # ADV_NONCONN_IND
+        st = self.cmd(0x08, 0x0006, p)
+        if st: raise HciError(f"legacy params status 0x{st:02X}")
+        st = self.cmd(0x08, 0x0008, bytes([31]) + bytes(31))
+        if st: raise HciError(f"legacy data status 0x{st:02X}")
+        st = self.cmd(0x08, 0x000A, b"\x01")
+        if st: raise HciError(f"legacy enable status 0x{st:02X}")
+        self.mode = "legacy"
 
-    def adv_params(self, interval_ms=100):
-        iv = int(interval_ms / 0.625)
-        p = struct.pack("<HHBBB6sBB", iv, iv, 0x03, 0x00, 0x00, bytes(6), 0x07, 0x00)  # ADV_NONCONN_IND
-        self.cmd(0x08, 0x0006, p)
+    # ---- extended advertising (Bluetooth 5 commands) sending a LEGACY PDU — what phones scan for
+    def _ext_start(self):
+        self.cmd(0x08, 0x0039, bytes([0x00, 0x00]))                       # disable all sets
+        self.cmd(0x08, 0x003C, bytes([0x00]))                             # remove set 0 (ignore)
+        iv = int(100 / 0.625).to_bytes(3, "little")
+        p = (bytes([0x00]) + struct.pack("<H", 0x0010) + iv + iv +       # handle 0, props: legacy, non-connectable
+             bytes([0x07, 0x00, 0x00]) + bytes(6) +                       # channels, own public, peer type
+             bytes([0x00, 0x7F, 0x01, 0x00, 0x01, 0x00, 0x00]))           # filter, tx pwr, PHY 1M, skip, PHY, SID, scan notif
+        st = self.cmd(0x08, 0x0036, p)
+        if st: raise HciError(f"ext params status 0x{st:02X}")
+        st = self.cmd(0x08, 0x0037, bytes([0x00, 0x03, 0x01, 31]) + bytes(31))
+        if st: raise HciError(f"ext data status 0x{st:02X}")
+        st = self.cmd(0x08, 0x0039, bytes([0x01, 0x01, 0x00, 0x00, 0x00, 0x00]))
+        if st: raise HciError(f"ext enable status 0x{st:02X}")
+        self.mode = "extended"
+
+    def start(self):
+        errors = []
+        for attempt in (self._legacy_start, self._ext_start):
+            try:
+                attempt(); return
+            except HciError as e:
+                errors.append(str(e))
+        # last resort: reset the controller (clears the legacy/extended lock) and try again
+        self.cmd(0x03, 0x0003)
+        time.sleep(0.5)
+        for attempt in (self._legacy_start, self._ext_start):
+            try:
+                attempt(); return
+            except HciError as e:
+                errors.append(str(e))
+        raise HciError(" | ".join(errors))
+
+    def stop(self):
+        if self.mode == "extended":
+            self.cmd(0x08, 0x0039, bytes([0x00, 0x00]), check=False)
+        else:
+            self.cmd(0x08, 0x000A, b"\x00", check=False)
 
     def adv_data(self, data31):
-        self.cmd(0x08, 0x0008, bytes([len(data31)]) + data31.ljust(31, b"\x00"))
+        d = data31.ljust(31, b"\x00")
+        if self.mode == "extended":
+            st = self.cmd(0x08, 0x0037, bytes([0x00, 0x03, 0x01, len(data31)]) + data31)
+        else:
+            st = self.cmd(0x08, 0x0008, bytes([len(data31)]) + d)
+        if st:
+            raise HciError(f"data update status 0x{st:02X}")
 
 # ----------------------------------------------------------------- simulator
 class Sim:
@@ -155,12 +230,12 @@ class Sim:
                 return
             try:
                 self.hci = self.hci or Hci()
-                self.hci.adv_enable(False)
-                self.hci.adv_params(100)
-                self.hci.adv_enable(True)
+                self.hci.start()
                 self.error = ""
             except PermissionError:
                 self.error = "يجب التشغيل بصلاحية الجذر: sudo python3 rid_sim.py"; return
+            except HciError as e:
+                self.error = f"شريحة البلوتوث رفضت البث: {e} — جرّب: sudo systemctl stop bluetooth"; return
             except Exception as e:   # no Bluetooth adapter / Python without Bluetooth support
                 self.error = f"تعذّر الوصول إلى البلوتوث: {e}"; return
             self.running = True
@@ -172,7 +247,7 @@ class Sim:
         with self.lock:
             self.running = False
         try:
-            if self.hci: self.hci.adv_enable(False)
+            if self.hci: self.hci.stop()
         except OSError:
             pass
 
@@ -214,7 +289,8 @@ class Sim:
             try:
                 self.hci.adv_data(ble_adv_payload(msg, counter))
                 counter += 1; self.sent += 1
-            except OSError as e:
+                if self.error.startswith("خطأ"): self.error = ""
+            except (OSError, HciError) as e:
                 self.error = f"خطأ بلوتوث: {e}"
             time.sleep(0.15)
 
@@ -224,6 +300,7 @@ class Sim:
             "lat": round(self.lat, 6), "lon": round(self.lon, 6),
             "op_lat": round(self.op_lat, 6), "op_lon": round(self.op_lon, 6),
             "serial": SERIAL, "area": AREA_NAME, "error": self.error,
+            "mode": (self.hci.mode if self.hci else None),
         }
 
 SIM = Sim()
@@ -264,7 +341,8 @@ async function refresh(){
  document.getElementById('stext').textContent=s.running?(s.scenario=='spoof'?'يبث — بيانات مزيفة ⚠️':'يبث الآن ✅'):'متوقف';
  document.getElementById('info').innerHTML=
   'الرقم التسلسلي: '+s.serial+'<br>موقع الدرون: '+s.lat+', '+s.lon+
-  '<br>موقع المشغل: '+s.op_lat+', '+s.op_lon+'<br>رسائل مُرسلة: '+s.sent;
+  '<br>موقع المشغل: '+s.op_lat+', '+s.op_lon+'<br>رسائل مُرسلة: '+s.sent+
+  (s.mode?'<br>طريقة البث: '+(s.mode=='extended'?'بلوتوث 5 (حديثة)':'بلوتوث 4 (قديمة)'):'');
  document.getElementById('err').textContent=s.error||'';
 }
 setInterval(refresh,1000);refresh();
