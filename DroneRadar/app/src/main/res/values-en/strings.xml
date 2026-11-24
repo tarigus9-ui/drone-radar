@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- English texts used by the PDF report (the app UI itself stays Arabic). -->
+<resources>
+    <string name="rp_title">Drone Detection Report</string>
+    <string name="rp_generated">Generated %1$s by DroneRadar</string>
+    <string name="rp_footer">Page %1$d — DroneRadar • Data from Remote ID broadcasts and guard reports</string>
+    <string name="rp_k_incidents">Incidents</string>
+    <string name="rp_k_drones">Distinct drones</string>
+    <string name="rp_k_suspicious">Suspicious data</string>
+    <string name="rp_k_authorized">Authorized</string>
+    <string name="rp_k_opknown">Operator located</string>
+    <string name="rp_k_sightings">Visual sightings</string>
+    <string name="rp_k_triang">Triangulated positions</string>
+    <string name="rp_k_points">Detection points</string>
+    <string name="rp_none">No incidents were recorded in this period.</string>
+    <string name="rp_by_day">Incidents per day</string>
+    <string name="rp_by_hour">Incidents by hour of day</string>
+    <string name="rp_by_site">Incidents per site</string>
+    <string name="rp_site">Site</string>
+    <string name="rp_top_drones">Most frequent drones</string>
+    <string name="rp_serial">Serial number</string>
+    <string name="rp_times">Times</string>
+    <string name="rp_last_seen">Last seen</string>
+    <string name="rp_status">Status</string>
+    <string name="rp_st_sus">⚠ Suspicious</string>
+    <string name="rp_st_auth">✓ Authorized</string>
+    <string name="rp_st_unknown">Not authorized</string>
+    <string name="rp_flags">Forgery indicators detected</string>
+    <string name="rp_reason">Reason</string>
+    <string name="rp_flags_note">Indicators are estimates and need on-site verification; "non-standard serial" may mean a non-compliant manufacturer rather than forgery.</string>
+    <string name="rp_staff">Staff activity</string>
+    <string name="rp_name">Name</string>
+    <string name="rp_log">Incident log (%1$d)</string>
+    <string name="rp_time">Time</string>
+    <string name="rp_op">operator located</string>
+    <string name="outside_sites">Outside sites</string>
+    <string name="sp_speed">Impossible speed or jump</string>
+    <string name="sp_alt">Impossible altitude</string>
+    <string name="sp_clone">Same serial at two distant places</string>
+    <string name="sp_signal">Very strong signal while claiming to be far</string>
+    <string name="sp_opfar">Operator more than 15 km from the drone</string>
+    <string name="sp_serial">Serial does not match the ANSI/CTA-2063 standard</string>
+    <string name="sp_nearby">A nearby online guard did not receive it</string>
+    <string name="sp_wl">⛔ Impersonating an authorized drone serial</string>
+</resources>

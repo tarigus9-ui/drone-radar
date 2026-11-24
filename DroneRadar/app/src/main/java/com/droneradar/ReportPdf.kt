@@ -22,7 +22,13 @@ import java.util.TimeZone
  * Builds an A4 Arabic (right-to-left) PDF from report_summary() data:
  * key figures, incidents per day / hour, per site, top drones, forgery signs, staff activity, incident log.
  */
-class ReportPdf(private val ctx: Context, private val j: JSONObject, private val periodLabel: String) {
+class ReportPdf(baseCtx: Context, private val j: JSONObject, private val periodLabel: String, private val rtl: Boolean) {
+
+    /** Strings come from values/ (Arabic) or values-en/ (English) depending on the chosen language. */
+    private val ctx: Context = baseCtx.createConfigurationContext(
+        android.content.res.Configuration(baseCtx.resources.configuration).apply {
+            setLocale(if (rtl) Locale("ar") else Locale.ENGLISH)
+        })
 
     private val W = 595; private val H = 842; private val M = 36f
     private val inner = W - 2 * M
@@ -86,7 +92,7 @@ class ReportPdf(private val ctx: Context, private val j: JSONObject, private val
         }
         val sl = StaticLayout.Builder.obtain(s, 0, s.length, tp, width.toInt().coerceAtLeast(10))
             .setAlignment(if (center) Layout.Alignment.ALIGN_CENTER else Layout.Alignment.ALIGN_NORMAL)
-            .setTextDirection(TextDirectionHeuristics.RTL)
+            .setTextDirection(if (rtl) TextDirectionHeuristics.RTL else TextDirectionHeuristics.FIRSTSTRONG_LTR)
             .setIncludePad(false)
             .build()
         c.save(); c.translate(x, top); sl.draw(c); c.restore()
@@ -113,10 +119,11 @@ class ReportPdf(private val ctx: Context, private val j: JSONObject, private val
             val hgt = cells.mapIndexed { i, s -> measure(s, widths[i] - 8f, 9f) }.maxOrNull()!! + 8f
             need(hgt)
             if (bg != null) rect(M, y, W - M, y + hgt, bg)
-            var right = W - M
+            var edge = if (rtl) W - M else M
             cells.forEachIndexed { i, s ->
-                text(s, right - widths[i] + 4f, y + 4f, widths[i] - 8f, 9f, bold = bold, color = fg)
-                right -= widths[i]
+                val left = if (rtl) edge - widths[i] else edge
+                text(s, left + 4f, y + 4f, widths[i] - 8f, 9f, bold = bold, color = fg)
+                edge = if (rtl) edge - widths[i] else edge + widths[i]
             }
             y += hgt
         }
@@ -174,13 +181,14 @@ class ReportPdf(private val ctx: Context, private val j: JSONObject, private val
         val cols = 4; val gap = 8f; val bw = (inner - gap * (cols - 1)) / cols; val bh = 54f
         items.forEachIndexed { i, (label, v) ->
             val col = i % cols; val row = i / cols
-            val right = W - M - col * (bw + gap)
+            val right = if (rtl) W - M - col * (bw + gap) else M + col * (bw + gap) + bw
             val top = y + row * (bh + gap)
             val accent = when (i) { 2 -> PURPLE; 3 -> TEAL; 0 -> RED; else -> NAVY }
             rect(right - bw, top, right, top + bh, LIGHT)
-            rect(right - 4f, top, right, top + bh, accent)
-            text(v.toString(), right - bw + 6f, top + 6f, bw - 14f, 18f, bold = true, color = accent)
-            text(label, right - bw + 6f, top + 32f, bw - 14f, 8.5f, color = GREY)
+            if (rtl) rect(right - 4f, top, right, top + bh, accent) else rect(right - bw, top, right - bw + 4f, top + bh, accent)
+            val tx = if (rtl) right - bw + 6f else right - bw + 10f
+            text(v.toString(), tx, top + 6f, bw - 16f, 18f, bold = true, color = accent)
+            text(label, tx, top + 32f, bw - 16f, 8.5f, color = GREY)
         }
         y += 2 * bh + gap + 6f
         if (j.optInt("incidents") == 0) {
@@ -266,7 +274,7 @@ class ReportPdf(private val ctx: Context, private val j: JSONObject, private val
         section(ctx.getString(R.string.rp_log, a.length()))
         val items = (0 until a.length()).map { a.getJSONObject(it) }
         val rows = items.map {
-            listOf(local(it.optString("started")) + " ← " + local(it.optString("ended")).substringAfter(' '),
+            listOf(local(it.optString("started")) + (if (rtl) " ← " else " → ") + local(it.optString("ended")).substringAfter(' '),
                 it.optString("site").ifBlank { ctx.getString(R.string.outside_sites) }.let { s -> if (s == "null") ctx.getString(R.string.outside_sites) else s },
                 it.optString("serial"),
                 status(it.optBoolean("sus"), it.optBoolean("auth")) + if (it.optBoolean("op")) " • " + ctx.getString(R.string.rp_op) else "")

@@ -29,6 +29,8 @@ class ReportActivity : AppCompatActivity() {
     private lateinit var shareBtn: Button
     private lateinit var openBtn: Button
     private var lastFile: File? = null
+    private var arabic = false        // English by default
+    private lateinit var langBtn: Button
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -40,6 +42,12 @@ class ReportActivity : AppCompatActivity() {
         progress = ProgressBar(this).apply { visibility = View.GONE }
         shareBtn = Button(this).apply { text = getString(R.string.rp_share); visibility = View.GONE; setOnClickListener { share() } }
         openBtn = Button(this).apply { text = getString(R.string.rp_open); visibility = View.GONE; setOnClickListener { open() } }
+
+        langBtn = Button(this, null, android.R.attr.buttonBarButtonStyle).apply {
+            setOnClickListener { arabic = !arabic; refreshLang() }
+        }
+        arabic = getSharedPreferences("report", MODE_PRIVATE).getBoolean("arabic", false)
+        refreshLang()
 
         fun periodButton(label: Int, range: () -> Pair<Calendar, Calendar>) = Button(this).apply {
             text = getString(label)
@@ -53,6 +61,7 @@ class ReportActivity : AppCompatActivity() {
             setPadding(pad, pad, pad, pad)
             addView(TextView(context).apply { text = getString(R.string.rp_screen); textSize = 22f })
             addView(info)
+            addView(langBtn)
             addView(periodButton(R.string.rp_this_month) { monthRange(0) })
             addView(periodButton(R.string.rp_last_month) { monthRange(-1) })
             addView(periodButton(R.string.rp_last_7) { lastDays(7) })
@@ -61,6 +70,11 @@ class ReportActivity : AppCompatActivity() {
             addView(shareBtn)
             addView(openBtn)
         })
+    }
+
+    private fun refreshLang() {
+        langBtn.text = getString(if (arabic) R.string.rp_lang_ar else R.string.rp_lang_en)
+        getSharedPreferences("report", MODE_PRIVATE).edit().putBoolean("arabic", arabic).apply()
     }
 
     private fun monthRange(offset: Int): Pair<Calendar, Calendar> {
@@ -84,7 +98,8 @@ class ReportActivity : AppCompatActivity() {
         info.text = getString(R.string.rp_working)
         val df = SimpleDateFormat("d/M/yyyy", Locale.US)
         val toShow = (to.clone() as Calendar).apply { add(Calendar.SECOND, -1) }
-        val period = "$label (${df.format(from.time)} – ${df.format(toShow.time)})"
+        val labelLang = if (arabic) label else englishLabel(label)
+        val period = "$labelLang (${df.format(from.time)} – ${df.format(toShow.time)})"
         val args = JSONObject().put("p_from", iso(from)).put("p_to", iso(to)).put("p_tz", TimeZone.getDefault().id)
         val (code, body) = withContext(Dispatchers.IO) { Backend.call("POST", "/rest/v1/rpc/report_summary", args.toString()) }
         if (code !in 200..299) {
@@ -94,13 +109,21 @@ class ReportActivity : AppCompatActivity() {
         val file = withContext(Dispatchers.Default) {
             val j = JSONObject(body)
             val name = "DroneRadar_" + SimpleDateFormat("yyyy-MM-dd", Locale.US).format(from.time) + ".pdf"
-            ReportPdf(this@ReportActivity, j, period).write(File(File(cacheDir, "reports"), name))
+            ReportPdf(this@ReportActivity, j, period, rtl = arabic).write(File(File(cacheDir, "reports"), name))
         }
         lastFile = file
         progress.visibility = View.GONE
         val j = JSONObject(body)
         info.text = getString(R.string.rp_done, j.optInt("incidents"), j.optInt("suspicious"), j.optInt("sightings"))
         shareBtn.visibility = View.VISIBLE; openBtn.visibility = View.VISIBLE
+    }
+
+    private fun englishLabel(ar: String) = when (ar) {
+        getString(R.string.rp_this_month) -> "This month"
+        getString(R.string.rp_last_month) -> "Last month"
+        getString(R.string.rp_last_7) -> "Last 7 days"
+        getString(R.string.rp_last_30) -> "Last 30 days"
+        else -> ar
     }
 
     private fun uri(f: File) = FileProvider.getUriForFile(this, "$packageName.files", f)
