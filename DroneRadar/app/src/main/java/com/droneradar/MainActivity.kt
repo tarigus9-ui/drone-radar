@@ -5,13 +5,14 @@ import android.annotation.SuppressLint
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
-import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
+import android.view.View
 import android.widget.Button
+import android.widget.FrameLayout
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
@@ -20,29 +21,28 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import com.droneradar.map.RadarMap
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.osmdroid.config.Configuration
-import org.osmdroid.tileprovider.tilesource.TileSourceFactory
-import org.osmdroid.util.GeoPoint
-import org.osmdroid.views.MapView
-import org.osmdroid.views.overlay.Marker
-import org.osmdroid.views.overlay.Polyline
-import org.osmdroid.views.overlay.mylocation.GpsMyLocationProvider
-import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
 import java.util.Locale
 
 class MainActivity : AppCompatActivity() {
 
-    private lateinit var map: MapView
+    private var map: RadarMap? = null
     private lateinit var status: TextView
     private lateinit var list: TextView
     private lateinit var account: TextView
     private lateinit var adminBtn: Button
+    private lateinit var historyBtn: Button
+    private lateinit var satBtn: Button
     private lateinit var toggle: Button
-    private lateinit var myLoc: MyLocationNewOverlay
-    private val droneOverlays = mutableListOf<org.osmdroid.views.overlay.Overlay>()
     private var focusKey: String? = null
-    private var firstFix = true
+    private var satellite = true
 
     private val basePerms: Array<String>
         get() = buildList {
@@ -77,28 +77,34 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
         Alerts.createChannels(this)
 
-        map = findViewById(R.id.map)
         status = findViewById(R.id.status)
         list = findViewById(R.id.list)
         account = findViewById(R.id.account)
         account.setOnClickListener { onAccountClick() }
         adminBtn = findViewById(R.id.admin)
         adminBtn.setOnClickListener { startActivity(Intent(this, AdminActivity::class.java)) }
-        lifecycleScope.launch(kotlinx.coroutines.Dispatchers.IO) { runCatching { Backend.refreshWho() } }
+        historyBtn = findViewById(R.id.history)
+        historyBtn.setOnClickListener { startActivity(Intent(this, HistoryActivity::class.java)) }
+        satBtn = findViewById(R.id.sat)
+        satBtn.setOnClickListener {
+            satellite = !satellite
+            map?.setSatellite(satellite)
+            satBtn.text = getString(if (satellite) R.string.map_plain else R.string.map_sat)
+        }
         toggle = findViewById(R.id.toggle)
+        lifecycleScope.launch(Dispatchers.IO) { runCatching { Backend.refreshWho() } }
 
-        map.setTileSource(TileSourceFactory.MAPNIK)
-        map.setMultiTouchControls(true)
-        map.controller.setZoom(15.0)
-        map.controller.setCenter(GeoPoint(25.2048, 55.2708))
-
-        myLoc = MyLocationNewOverlay(GpsMyLocationProvider(this), map)
-        myLoc.enableMyLocation()
-        myLoc.runOnFirstFix { runOnUiThread { if (firstFix) map.controller.animateTo(myLoc.myLocation) } }
-        map.overlays.add(myLoc)
+        RadarMap.create(this, findViewById<FrameLayout>(R.id.map_container)) { m ->
+            map = m
+            satBtn.visibility = if (m.supportsSatellite) View.VISIBLE else View.GONE
+            m.onStart(); m.onResume()
+            render(DroneRepository.drones.value)
+            lifecycleScope.launch { refreshOverlays(sitesToo = true) }
+        }
 
         findViewById<Button>(R.id.center).setOnClickListener {
-            myLoc.myLocation?.let { map.controller.animateTo(it) }
+            (map?.myLocation() ?: Backend.myLocation?.let { it.latitude to it.longitude })
+                ?.let { map?.setCenter(it.first, it.second, 16.0) }
         }
         toggle.setOnClickListener {
             val on = !Prefs.enabled(this)
@@ -118,22 +124,17 @@ class MainActivity : AppCompatActivity() {
         }
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                Backend.status.collect { st ->
-                    account.visibility = if (Backend.isConfigured) android.view.View.VISIBLE else android.view.View.GONE
-                    val w = Backend.who
-                    val roleLine = when {
-                        !st.loggedIn -> ""
-                        w == null -> ""
-                        !w.hasProfile -> "\n" + getString(R.string.waiting_activation)
-                        else -> "\n" + getString(R.string.role_line, roleName(w.role), w.site ?: w.region ?: w.company ?: "")
-                    }
-                    account.text = when {
-                        !st.loggedIn -> getString(R.string.acc_offline)
-                        st.lastError != null && st.pending > 0 -> getString(R.string.acc_error, st.lastError) +
-                            "  " + getString(R.string.acc_online, st.email ?: "", st.sent, st.pending)
-                        else -> getString(R.string.acc_online, st.email ?: "", st.sent, st.pending)
-                    } + roleLine
-                    adminBtn.visibility = if (Backend.isAdmin) android.view.View.VISIBLE else android.view.View.GONE
+                Backend.status.collect { st -> renderAccount(st) }
+            }
+        }
+        // Sites every 5 min, staff coverage every 30 s (managers)
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                var n = 0
+                while (isActive) {
+                    refreshOverlays(sitesToo = n % 10 == 0)
+                    n++
+                    delay(30_000)
                 }
             }
         }
@@ -145,8 +146,29 @@ class MainActivity : AppCompatActivity() {
         render(DroneRepository.drones.value)
     }
 
-    override fun onResume() { super.onResume(); if (::map.isInitialized) map.onResume() }
-    override fun onPause() { super.onPause(); if (::map.isInitialized) map.onPause() }
+    override fun onStart() { super.onStart(); map?.onStart() }
+    override fun onResume() { super.onResume(); map?.onResume() }
+    override fun onPause() { map?.onPause(); super.onPause() }
+    override fun onStop() { map?.onStop(); super.onStop() }
+    override fun onDestroy() { map?.onDestroy(); super.onDestroy() }
+
+    private fun renderAccount(st: Backend.Status) {
+        account.visibility = if (Backend.isConfigured) View.VISIBLE else View.GONE
+        val w = Backend.who
+        val roleLine = when {
+            !st.loggedIn || w == null -> ""
+            !w.hasProfile -> "\n" + getString(R.string.waiting_activation)
+            else -> "\n" + getString(R.string.role_line, roleName(w.role), w.site ?: w.region ?: w.company ?: "")
+        }
+        account.text = when {
+            !st.loggedIn -> getString(R.string.acc_offline)
+            st.lastError != null && st.pending > 0 -> getString(R.string.acc_error, st.lastError) +
+                "  " + getString(R.string.acc_online, st.email ?: "", st.sent, st.pending)
+            else -> getString(R.string.acc_online, st.email ?: "", st.sent, st.pending)
+        } + roleLine
+        adminBtn.visibility = if (Backend.isAdmin) View.VISIBLE else View.GONE
+        historyBtn.visibility = if (st.loggedIn && w?.hasProfile == true) View.VISIBLE else View.GONE
+    }
 
     private fun roleName(r: String?) = when (r) {
         "admin" -> getString(R.string.role_admin)
@@ -208,71 +230,85 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // ---------- Map rendering ----------
-    private fun dot(color: Int, sizeDp: Int) = GradientDrawable().apply {
-        shape = GradientDrawable.OVAL
-        setColor(color)
-        setStroke(dp(2), Color.WHITE)
-        val s = dp(sizeDp); setSize(s, s)
-    }
-    private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
-
-    private fun render(drones: List<DroneInfo>) {
-        map.overlays.removeAll(droneOverlays)
-        droneOverlays.clear()
-        val sb = StringBuilder()
-        var focusPoint: GeoPoint? = null
-
-        for (d in drones) {
-            val dronePt = if (d.lat != null && d.lon != null) GeoPoint(d.lat!!, d.lon!!) else null
-            val opPt = if (d.opLat != null && d.opLon != null) GeoPoint(d.opLat!!, d.opLon!!) else null
-
-            if (dronePt != null && opPt != null) {
-                droneOverlays += Polyline(map).apply {
-                    setPoints(listOf(opPt, dronePt))
-                    outlinePaint.color = Color.argb(160, 255, 140, 0)
-                    outlinePaint.strokeWidth = dp(2).toFloat()
+    // ---------- Platform overlays: sites + live staff coverage ----------
+    private suspend fun refreshOverlays(sitesToo: Boolean) {
+        val m = map ?: return
+        if (!Backend.isLoggedIn || Backend.who?.hasProfile != true) return
+        if (sitesToo) {
+            val (c, b) = withContext(Dispatchers.IO) { Backend.call("POST", "/rest/v1/rpc/list_sites", "{}") }
+            if (c in 200..299) {
+                m.clear(L_SITES)
+                runCatching { JSONArray(b) }.getOrNull()?.let { a ->
+                    for (i in 0 until a.length()) {
+                        val s = a.getJSONObject(i)
+                        val lat = s.optDouble("lat"); val lon = s.optDouble("lon")
+                        if (lat.isNaN() || lon.isNaN()) continue
+                        m.addCircle(L_SITES, lat, lon, s.optDouble("radius_m", 500.0),
+                            Color.argb(220, 255, 193, 7), Color.argb(40, 255, 193, 7))
+                    }
                 }
             }
-            opPt?.let {
-                droneOverlays += Marker(map).apply {
-                    position = it
-                    icon = dot(Color.rgb(0, 200, 83), 18)       // 🟢 operator
-                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                    title = getString(R.string.operator)
-                    snippet = "${d.operatorId ?: ""}\n${d.label}"
-                }
-            }
-            dronePt?.let {
-                droneOverlays += Marker(map).apply {
-                    position = it
-                    icon = dot(Color.rgb(229, 57, 53), 22)      // 🔴 drone
-                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                    title = d.label
-                    snippet = details(d)
-                }
-            }
-            if (d.key == focusKey) focusPoint = opPt ?: dronePt
-            sb.append(if (d.remote) "📡 " else "• ").append(d.label).append(" — ").append(d.remoteInfo ?: d.source)
-                .append(if (opPt != null) " — 🟢" else "").append('\n')
         }
-        map.overlays.addAll(droneOverlays)
-        map.invalidate()
+        if (Backend.isManager) {
+            val (c, b) = withContext(Dispatchers.IO) { Backend.call("POST", "/rest/v1/rpc/coverage", "{}") }
+            if (c in 200..299) {
+                m.clear(L_STAFF)
+                runCatching { JSONArray(b) }.getOrNull()?.let { a ->
+                    for (i in 0 until a.length()) {
+                        val g = a.getJSONObject(i)
+                        val lat = g.optDouble("lat"); val lon = g.optDouble("lon")
+                        if (lat.isNaN() || lon.isNaN()) continue
+                        val online = g.optBoolean("online")
+                        val bat = if (g.isNull("battery")) "—" else "${g.optInt("battery")}%"
+                        m.addDot(L_STAFF, lat, lon,
+                            if (online) Color.rgb(30, 136, 229) else Color.rgb(158, 158, 158), 16,
+                            "🛡️ ${g.optString("name", "")}",
+                            getString(if (online) R.string.staff_online else R.string.staff_offline, bat))
+                    }
+                }
+            }
+        }
+    }
 
-        status.text = if (drones.isEmpty()) getString(R.string.scanning)
-        else getString(R.string.found, drones.size)
+    // ---------- Drones ----------
+    private fun render(drones: List<DroneInfo>) {
+        val sb = StringBuilder()
+        for (d in drones) {
+            sb.append(if (d.remote) "📡 " else "• ").append(d.label).append(" — ").append(d.remoteInfo ?: d.source)
+                .append(if (d.opLat != null) " — 🟢" else "").append('\n')
+        }
+        status.text = if (drones.isEmpty()) getString(R.string.scanning) else getString(R.string.found, drones.size)
         list.text = sb.toString().trim()
 
-        focusPoint?.let { map.controller.animateTo(it); firstFix = false; focusKey = null }
+        val m = map ?: return
+        m.clear(L_DRONES)
+        var focus: Pair<Double, Double>? = null
+        for (d in drones) {
+            val dronePt = if (d.lat != null && d.lon != null) d.lat!! to d.lon!! else null
+            val opPt = if (d.opLat != null && d.opLon != null) d.opLat!! to d.opLon!! else null
+            if (dronePt != null && opPt != null) m.addLine(L_DRONES, listOf(opPt, dronePt), Color.argb(200, 255, 140, 0), 2.5f)
+            opPt?.let {
+                m.addDot(L_DRONES, it.first, it.second, Color.rgb(0, 200, 83), 18,
+                    getString(R.string.operator), "${d.operatorId ?: ""}  ${d.label}")
+            }
+            dronePt?.let { m.addDot(L_DRONES, it.first, it.second, Color.rgb(229, 57, 53), 22, d.label, details(d)) }
+            if (d.key == focusKey) focus = opPt ?: dronePt
+        }
+        focus?.let { m.setCenter(it.first, it.second, 17.0); focusKey = null }
     }
 
     private fun details(d: DroneInfo) = buildString {
         fun f(v: Float?) = v?.let { String.format(Locale.US, "%.1f", it) } ?: "—"
         if (d.remote) appendLine("📡 ${d.remoteInfo ?: ""}")
         else appendLine("${getString(R.string.source)}: ${d.source}  (${d.rssi} dBm)")
-        appendLine("${getString(R.string.height)}: ${f(d.height)} m  |  ${getString(R.string.alt)}: ${f(d.altGeo)} m")
-        appendLine("${getString(R.string.speed)}: ${f(d.speed)} m/s  |  ${getString(R.string.heading)}: ${f(d.heading)}°")
+        appendLine("${getString(R.string.height)}: ${f(d.height)} m  |  ${getString(R.string.speed)}: ${f(d.speed)} m/s")
         d.operatorId?.let { appendLine("${getString(R.string.operator_id)}: $it") }
-        d.description?.let { appendLine(it) }
+        d.description?.let { append(it) }
+    }.trim()
+
+    companion object {
+        private const val L_SITES = "sites"
+        private const val L_STAFF = "staff"
+        private const val L_DRONES = "drones"
     }
 }
