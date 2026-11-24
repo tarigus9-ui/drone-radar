@@ -47,6 +47,10 @@ class HistoryActivity : AppCompatActivity() {
                     text = getString(label); setOnClickListener { days = d; load() }
                 })
             }
+            addView(Button(context, null, android.R.attr.buttonBarButtonStyle).apply {
+                text = getString(R.string.rp_button)
+                setOnClickListener { startActivity(android.content.Intent(this@HistoryActivity, ReportActivity::class.java)) }
+            })
         }
 
         setContentView(LinearLayout(this).apply {
