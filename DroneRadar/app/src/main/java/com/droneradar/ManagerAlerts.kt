@@ -81,9 +81,18 @@ object ManagerAlerts {
             r.dbl("drone_height")?.let { d.height = it.toFloat() }
             r.dbl("speed")?.let { d.speed = it.toFloat() }; r.dbl("heading")?.let { d.heading = it.toFloat() }
             r.dbl("op_lat")?.let { d.opLat = it }; r.dbl("op_lon")?.let { d.opLon = it }
+            d.spoof = d.spoof + SpoofCheck.fromJson(r.optJSONArray("spoof_flags"))
         }
+        val flags = SpoofCheck.fromJson(r.optJSONArray("spoof_flags"))
 
         val now = System.currentTimeMillis()
+        val spoofKey = "$key-spoof"
+        if (flags.isNotEmpty() && now - (alerted[spoofKey] ?: 0) >= REALERT_MS) {
+            alerted[spoofKey] = now; alerted[key] = now
+            notify(ctx, spoofKey, ctx.getString(R.string.mgr_alert_title_spoof, place),
+                ctx.getString(R.string.mgr_alert_text, reporter, serial ?: "—", "") + "\n⚠️ " + SpoofCheck.describe(ctx, flags))
+            return
+        }
         if (now - (alerted[key] ?: 0) < REALERT_MS) return
         alerted[key] = now
         notify(ctx, key, ctx.getString(R.string.mgr_alert_title, place),

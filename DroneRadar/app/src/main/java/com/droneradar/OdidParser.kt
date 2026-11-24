@@ -39,7 +39,7 @@ object OdidParser {
                 val id = ascii(b, 2, 20)
                 if (id.isNotBlank()) {
                     // idType 1 = serial number, 2 = CAA registration, 3 = UTM UUID, 4 = session
-                    if (idType == 1 || d.serial == null) d.serial = id
+                    if (idType == 1 || d.serial == null) { d.serial = id; d.idType = idType }
                 }
             }
             TYPE_LOCATION -> {

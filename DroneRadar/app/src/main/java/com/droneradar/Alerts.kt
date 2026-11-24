@@ -45,7 +45,7 @@ object Alerts {
         )
 
     fun notifyDrone(ctx: Context, d: DroneInfo) {
-        if (Whitelist.contains(d.serial)) return          // authorized drone — no alarm
+        if (SpoofCheck.silentBecauseWhitelisted(d)) return   // authorized and genuine — no alarm
         if (Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) return
@@ -53,8 +53,11 @@ object Alerts {
         val op = if (d.opLat != null) ctx.getString(R.string.op_known) else ctx.getString(R.string.op_unknown)
         val n = NotificationCompat.Builder(ctx, CH_ALERT)
             .setSmallIcon(R.drawable.ic_drone)
-            .setContentTitle(ctx.getString(R.string.alert_title))
+            .setContentTitle(ctx.getString(if (d.spoof.isNotEmpty()) R.string.alert_title_spoof else R.string.alert_title))
             .setContentText("${d.label} • ${d.source} • $op")
+            .setStyle(NotificationCompat.BigTextStyle().bigText(
+                "${d.label} • ${d.source} • $op" +
+                    if (d.spoof.isNotEmpty()) "\n⚠️ " + SpoofCheck.describe(ctx, d.spoof) else ""))
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setAutoCancel(true)

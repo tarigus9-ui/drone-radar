@@ -142,4 +142,15 @@
     <string name="sec_sightings">👁 بلاغات المشاهدة</string>
     <string name="show_photo">📷 عرض الصورة</string>
     <string name="no_photo">لا توجد صورة</string>
+    <string name="alert_title_spoof">⚠️ درون مشكوك في صحة بياناته</string>
+    <string name="mgr_alert_title_spoof">⚠️ درون مشكوك في %1$s</string>
+    <string name="suspicious">مشكوك</string>
+    <string name="sp_speed">سرعة أو قفزة مستحيلة</string>
+    <string name="sp_alt">ارتفاع مستحيل</string>
+    <string name="sp_clone">نفس الرقم التسلسلي في مكانين بعيدين</string>
+    <string name="sp_signal">إشارة قوية جداً بينما يدّعي أنه بعيد</string>
+    <string name="sp_opfar">المشغل يبعد أكثر من 15 كم عن الدرون</string>
+    <string name="sp_serial">رقم تسلسلي غير مطابق للمعيار</string>
+    <string name="sp_nearby">حارس قريب متصل لم يلتقط الإشارة</string>
+    <string name="sp_wl">⛔ انتحال رقم درون مصرّح به</string>
 </resources>

@@ -272,6 +272,7 @@ object Backend {
             put("source", d.source)
             put("drone_key", d.key)
             putOpt("serial", d.serial)
+            putOpt("id_type", d.idType)
             putOpt("operator_id", d.operatorId)
             putOpt("description", d.description)
             put("ua_type", d.uaType)
