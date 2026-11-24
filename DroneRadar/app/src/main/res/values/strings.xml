@@ -196,4 +196,6 @@
     <string name="rp_log">سجل الحوادث (%1$d)</string>
     <string name="rp_time">الوقت</string>
     <string name="rp_op">مشغل معروف</string>
+    <string name="rp_lang_en">🌐 لغة التقرير: English — اضغط للتغيير</string>
+    <string name="rp_lang_ar">🌐 لغة التقرير: العربية — اضغط للتغيير</string>
 </resources>
