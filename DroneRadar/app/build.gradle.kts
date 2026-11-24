@@ -16,6 +16,16 @@ android {
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"${project.findProperty("SUPABASE_ANON_KEY") ?: ""}\"")
     }
     buildFeatures { buildConfig = true }
+    // Same signing key on every GitHub build, so new versions install over old ones.
+    // (Debug key only — use a private release key before publishing to Google Play.)
+    signingConfigs {
+        getByName("debug") {
+            storeFile = file("shared-debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
     buildTypes { release { isMinifyEnabled = false } }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
