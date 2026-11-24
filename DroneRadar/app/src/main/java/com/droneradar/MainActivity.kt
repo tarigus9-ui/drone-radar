@@ -37,6 +37,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var status: TextView
     private lateinit var list: TextView
     private lateinit var account: TextView
+    private lateinit var adminBtn: Button
     private lateinit var toggle: Button
     private lateinit var myLoc: MyLocationNewOverlay
     private val droneOverlays = mutableListOf<org.osmdroid.views.overlay.Overlay>()
@@ -81,6 +82,9 @@ class MainActivity : AppCompatActivity() {
         list = findViewById(R.id.list)
         account = findViewById(R.id.account)
         account.setOnClickListener { onAccountClick() }
+        adminBtn = findViewById(R.id.admin)
+        adminBtn.setOnClickListener { startActivity(Intent(this, AdminActivity::class.java)) }
+        lifecycleScope.launch(kotlinx.coroutines.Dispatchers.IO) { runCatching { Backend.refreshWho() } }
         toggle = findViewById(R.id.toggle)
 
         map.setTileSource(TileSourceFactory.MAPNIK)
@@ -116,12 +120,20 @@ class MainActivity : AppCompatActivity() {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 Backend.status.collect { st ->
                     account.visibility = if (Backend.isConfigured) android.view.View.VISIBLE else android.view.View.GONE
+                    val w = Backend.who
+                    val roleLine = when {
+                        !st.loggedIn -> ""
+                        w == null -> ""
+                        !w.hasProfile -> "\n" + getString(R.string.waiting_activation)
+                        else -> "\n" + getString(R.string.role_line, roleName(w.role), w.site ?: w.region ?: w.company ?: "")
+                    }
                     account.text = when {
                         !st.loggedIn -> getString(R.string.acc_offline)
                         st.lastError != null && st.pending > 0 -> getString(R.string.acc_error, st.lastError) +
                             "  " + getString(R.string.acc_online, st.email ?: "", st.sent, st.pending)
                         else -> getString(R.string.acc_online, st.email ?: "", st.sent, st.pending)
-                    }
+                    } + roleLine
+                    adminBtn.visibility = if (Backend.isAdmin) android.view.View.VISIBLE else android.view.View.GONE
                 }
             }
         }
@@ -136,6 +148,13 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() { super.onResume(); if (::map.isInitialized) map.onResume() }
     override fun onPause() { super.onPause(); if (::map.isInitialized) map.onPause() }
 
+    private fun roleName(r: String?) = when (r) {
+        "admin" -> getString(R.string.role_admin)
+        "region_manager" -> getString(R.string.role_region)
+        "site_manager" -> getString(R.string.role_site)
+        else -> getString(R.string.role_guard)
+    }
+
     private fun onAccountClick() {
         if (!Backend.isLoggedIn) {
             getSharedPreferences("backend", MODE_PRIVATE).edit().putBoolean("offline_ok", false).apply()
@@ -145,6 +164,7 @@ class MainActivity : AppCompatActivity() {
             .setMessage(getString(R.string.logout_q, Backend.email ?: ""))
             .setPositiveButton(R.string.logout) { _, _ ->
                 Backend.logout()
+                ManagerAlerts.reset(this)
                 getSharedPreferences("backend", MODE_PRIVATE).edit().putBoolean("offline_ok", false).apply()
                 startActivity(Intent(this, LoginActivity::class.java)); finish()
             }
@@ -233,7 +253,7 @@ class MainActivity : AppCompatActivity() {
                 }
             }
             if (d.key == focusKey) focusPoint = opPt ?: dronePt
-            sb.append("• ").append(d.label).append(" — ").append(d.source)
+            sb.append(if (d.remote) "📡 " else "• ").append(d.label).append(" — ").append(d.remoteInfo ?: d.source)
                 .append(if (opPt != null) " — 🟢" else "").append('\n')
         }
         map.overlays.addAll(droneOverlays)
@@ -248,7 +268,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun details(d: DroneInfo) = buildString {
         fun f(v: Float?) = v?.let { String.format(Locale.US, "%.1f", it) } ?: "—"
-        appendLine("${getString(R.string.source)}: ${d.source}  (${d.rssi} dBm)")
+        if (d.remote) appendLine("📡 ${d.remoteInfo ?: ""}")
+        else appendLine("${getString(R.string.source)}: ${d.source}  (${d.rssi} dBm)")
         appendLine("${getString(R.string.height)}: ${f(d.height)} m  |  ${getString(R.string.alt)}: ${f(d.altGeo)} m")
         appendLine("${getString(R.string.speed)}: ${f(d.speed)} m/s  |  ${getString(R.string.heading)}: ${f(d.heading)}°")
         d.operatorId?.let { appendLine("${getString(R.string.operator_id)}: $it") }

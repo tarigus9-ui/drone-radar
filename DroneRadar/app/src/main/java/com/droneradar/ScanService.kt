@@ -62,6 +62,8 @@ class ScanService : Service() {
             while (isActive) {
                 runCatching { Backend.flush() }
                 if (tick % 12 == 0) runCatching { Backend.heartbeat(scanning = true) }
+                if (tick % 120 == 0) runCatching { Backend.refreshWho() }          // role may change
+                if (tick % 3 == 0) runCatching { ManagerAlerts.poll(this@ScanService) } // managers: staff detections
                 tick++
                 delay(5_000)
             }

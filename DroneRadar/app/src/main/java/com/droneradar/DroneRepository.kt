@@ -19,6 +19,8 @@ data class DroneInfo(
     var firstSeen: Long = System.currentTimeMillis(),
     var lastSeen: Long = System.currentTimeMillis(),
     var alerted: Boolean = false,
+    var remote: Boolean = false,          // seen by another guard, received from the platform
+    var remoteInfo: String? = null,       // "site • reporter"
 ) {
     val label: String get() = serial ?: operatorId ?: key
 }
@@ -43,6 +45,17 @@ object DroneRepository {
         publish()
         Backend.onDetection(d)
         return d to isNew
+    }
+
+    /** Drone reported by another staff member (from the server). Never re-uploaded. */
+    @Synchronized
+    fun upsertRemote(key: String, fill: (DroneInfo) -> Unit) {
+        val d = map[key] ?: DroneInfo(key, remote = true)
+        if (!d.remote) return            // we already see it ourselves — local data wins
+        fill(d)
+        d.lastSeen = System.currentTimeMillis()
+        map[key] = d
+        publish()
     }
 
     @Synchronized

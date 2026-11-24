@@ -45,6 +45,9 @@ class LoginActivity : AppCompatActivity() {
         val msg = TextView(this).apply { setTextColor(0xFFC62828.toInt()); setPadding(0, pad / 3, 0, 0) }
         val progress = ProgressBar(this).apply { visibility = View.GONE }
         val btn = Button(this).apply { text = getString(R.string.login) }
+        val signup = Button(this, null, android.R.attr.borderlessButtonStyle).apply {
+            text = getString(R.string.signup)
+        }
         val offline = Button(this, null, android.R.attr.borderlessButtonStyle).apply {
             text = getString(R.string.offline_mode)
         }
@@ -54,8 +57,18 @@ class LoginActivity : AppCompatActivity() {
             if (e.isBlank() || p.isBlank()) { msg.text = getString(R.string.fill_fields); return@setOnClickListener }
             btn.isEnabled = false; progress.visibility = View.VISIBLE; msg.text = ""
             lifecycleScope.launch {
-                val err = withContext(Dispatchers.IO) { Backend.login(e, p) }
+                val err = withContext(Dispatchers.IO) { Backend.login(e, p).also { if (it == null) Backend.refreshWho() } }
                 progress.visibility = View.GONE; btn.isEnabled = true
+                if (err == null) openMain() else msg.text = err
+            }
+        }
+        signup.setOnClickListener {
+            val e = email.text.toString(); val p = pass.text.toString()
+            if (e.isBlank() || p.isBlank()) { msg.text = getString(R.string.fill_fields); return@setOnClickListener }
+            signup.isEnabled = false; progress.visibility = View.VISIBLE; msg.text = ""
+            lifecycleScope.launch {
+                val err = withContext(Dispatchers.IO) { Backend.signUp(e, p) }
+                progress.visibility = View.GONE; signup.isEnabled = true
                 if (err == null) openMain() else msg.text = err
             }
         }
@@ -70,7 +83,7 @@ class LoginActivity : AppCompatActivity() {
             layoutDirection = View.LAYOUT_DIRECTION_RTL
             setPadding(pad, pad, pad, pad)
             addView(title); addView(sub); addView(email); addView(pass)
-            addView(btn); addView(progress); addView(msg); addView(offline)
+            addView(btn); addView(progress); addView(msg); addView(signup); addView(offline)
         })
     }
 
