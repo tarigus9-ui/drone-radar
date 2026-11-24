@@ -39,6 +39,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var account: TextView
     private lateinit var adminBtn: Button
     private lateinit var historyBtn: Button
+    private lateinit var sawBtn: Button
     private lateinit var satBtn: Button
     private lateinit var toggle: Button
     private var focusKey: String? = null
@@ -68,6 +69,7 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         Configuration.getInstance().userAgentValue = packageName
         Backend.init(this)
+        Whitelist.load(this)
         val offlineOk = getSharedPreferences("backend", MODE_PRIVATE).getBoolean("offline_ok", false)
         if (Backend.isConfigured && !Backend.isLoggedIn && !offlineOk) {
             startActivity(Intent(this, LoginActivity::class.java))
@@ -83,6 +85,8 @@ class MainActivity : AppCompatActivity() {
         account.setOnClickListener { onAccountClick() }
         adminBtn = findViewById(R.id.admin)
         adminBtn.setOnClickListener { startActivity(Intent(this, AdminActivity::class.java)) }
+        sawBtn = findViewById(R.id.saw)
+        sawBtn.setOnClickListener { startActivity(Intent(this, SightingActivity::class.java)) }
         historyBtn = findViewById(R.id.history)
         historyBtn.setOnClickListener { startActivity(Intent(this, HistoryActivity::class.java)) }
         satBtn = findViewById(R.id.sat)
@@ -168,6 +172,7 @@ class MainActivity : AppCompatActivity() {
         } + roleLine
         adminBtn.visibility = if (Backend.isAdmin) View.VISIBLE else View.GONE
         historyBtn.visibility = if (st.loggedIn && w?.hasProfile == true) View.VISIBLE else View.GONE
+        sawBtn.visibility = historyBtn.visibility
     }
 
     private fun roleName(r: String?) = when (r) {
@@ -249,6 +254,20 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+        run {
+            val since = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US)
+                .apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }
+                .format(java.util.Date(System.currentTimeMillis() - 30 * 60_000L))
+            val (c, b) = withContext(Dispatchers.IO) {
+                Backend.call("POST", "/rest/v1/rpc/sightings_since", org.json.JSONObject().put("p_since", since).toString())
+            }
+            if (c in 200..299) {
+                m.clear(L_SIGHT)
+                runCatching { JSONArray(b) }.getOrNull()?.let { a ->
+                    for (i in 0 until a.length()) drawSighting(m, a.getJSONObject(i))
+                }
+            }
+        }
         if (Backend.isManager) {
             val (c, b) = withContext(Dispatchers.IO) { Backend.call("POST", "/rest/v1/rpc/coverage", "{}") }
             if (c in 200..299) {
@@ -270,11 +289,26 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /** Guard position + the direction he saw the drone (1.5 km ray) + triangulated position if any. */
+    private fun drawSighting(m: RadarMap, r: org.json.JSONObject) {
+        val lat = r.optDouble("lat"); val lon = r.optDouble("lon"); val br = r.optDouble("bearing")
+        if (lat.isNaN() || lon.isNaN() || br.isNaN()) return
+        val d = 1500.0
+        val endLat = lat + d * Math.cos(Math.toRadians(br)) / 111_320.0
+        val endLon = lon + d * Math.sin(Math.toRadians(br)) / (111_320.0 * Math.cos(Math.toRadians(lat)))
+        val orange = Color.rgb(255, 111, 0)
+        m.addLine(L_SIGHT, listOf(lat to lon, endLat to endLon), orange, 2.5f, dashed = true)
+        m.addDot(L_SIGHT, lat, lon, orange, 14, getString(R.string.sighting_title, r.optString("reporter")),
+            "${br.toInt()}° ${Compass.dirName(this, br.toFloat())} • ${r.optString("created_at").take(16).replace('T', ' ')}")
+        val eLat = r.optDouble("est_lat"); val eLon = r.optDouble("est_lon")
+        if (!eLat.isNaN() && !eLon.isNaN()) m.addDot(L_SIGHT, eLat, eLon, Color.rgb(156, 39, 176), 22, getString(R.string.est_position), getString(R.string.est_hint))
+    }
+
     // ---------- Drones ----------
     private fun render(drones: List<DroneInfo>) {
         val sb = StringBuilder()
         for (d in drones) {
-            sb.append(if (d.remote) "📡 " else "• ").append(d.label).append(" — ").append(d.remoteInfo ?: d.source)
+            sb.append(if (Whitelist.contains(d.serial)) "✅ " else if (d.remote) "📡 " else "• ").append(d.label).append(" — ").append(d.remoteInfo ?: d.source)
                 .append(if (d.opLat != null) " — 🟢" else "").append('\n')
         }
         status.text = if (drones.isEmpty()) getString(R.string.scanning) else getString(R.string.found, drones.size)
@@ -294,7 +328,11 @@ class MainActivity : AppCompatActivity() {
                 m.addDot(L_DRONES, it.first, it.second, Color.rgb(0, 200, 83), 18,
                     getString(R.string.operator), "${d.operatorId ?: ""}  ${d.label}")
             }
-            dronePt?.let { m.addDot(L_DRONES, it.first, it.second, Color.rgb(229, 57, 53), 22, d.label, details(d)) }
+            val ok = Whitelist.contains(d.serial)
+            dronePt?.let {
+                m.addDot(L_DRONES, it.first, it.second, if (ok) Color.rgb(0, 150, 136) else Color.rgb(229, 57, 53), 22,
+                    if (ok) "✅ ${Whitelist.label(d.serial)} • ${d.label}" else d.label, details(d))
+            }
             if (d.key == focusKey) focus = opPt ?: dronePt
         }
         focus?.let { m.setCenter(it.first, it.second, 17.0); focusKey = null }
@@ -313,5 +351,6 @@ class MainActivity : AppCompatActivity() {
         private const val L_SITES = "sites"
         private const val L_STAFF = "staff"
         private const val L_DRONES = "drones"
+        private const val L_SIGHT = "sightings"
     }
 }

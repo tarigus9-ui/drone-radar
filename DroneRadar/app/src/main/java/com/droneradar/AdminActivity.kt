@@ -36,6 +36,7 @@ class AdminActivity : AppCompatActivity() {
     private lateinit var regionList: LinearLayout
     private lateinit var siteList: LinearLayout
     private lateinit var staffList: LinearLayout
+    private lateinit var wlList: LinearLayout
     private lateinit var info: TextView
     private val pad by lazy { (16 * resources.displayMetrics.density).toInt() }
 
@@ -48,6 +49,7 @@ class AdminActivity : AppCompatActivity() {
         regionList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         siteList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         staffList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        wlList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -62,6 +64,9 @@ class AdminActivity : AppCompatActivity() {
             addView(section(getString(R.string.sec_staff), getString(R.string.add_staff)) { assignDialog() })
             addView(TextView(context).apply { text = getString(R.string.staff_hint); textSize = 12f })
             addView(staffList)
+            addView(section(getString(R.string.sec_whitelist), getString(R.string.add_whitelist)) { addWhitelistDialog() })
+            addView(TextView(context).apply { text = getString(R.string.whitelist_hint); textSize = 12f })
+            addView(wlList)
         }
         setContentView(ScrollView(this).apply { addView(root) })
         reload()
@@ -131,6 +136,44 @@ class AdminActivity : AppCompatActivity() {
                     rpc("admin_unassign", JSONObject().put("p_email", email))
                 }
             })
+        }
+
+        val (wc, wb) = io { Backend.call("POST", "/rest/v1/rpc/list_whitelist", "{}") }
+        wlList.removeAllViews()
+        if (wc in 200..299) {
+            val items = JSONArray(wb).objects()
+            if (items.isEmpty()) wlList.addView(row(getString(R.string.none_yet)))
+            items.forEach { w ->
+                val until = when {
+                    !w.optBoolean("active", true) -> getString(R.string.expired)
+                    w.str("valid_until") == null -> getString(R.string.permanent)
+                    else -> getString(R.string.until, w.str("valid_until")!!.take(10))
+                }
+                val serial = w.getString("serial")
+                wlList.addView(row("✅ $serial\n${w.str("label") ?: ""} • ${w.str("site") ?: getString(R.string.all_sites)} • $until") {
+                    confirm(getString(R.string.delete_wl_q, serial)) {
+                        rpc("remove_whitelist", JSONObject().put("p_id", w.getLong("id")))
+                    }
+                })
+            }
+            lifecycleScope.launch(Dispatchers.IO) { runCatching { Whitelist.refresh(this@AdminActivity) } }
+        }
+    }
+
+    private fun addWhitelistDialog() {
+        val serial = edit(getString(R.string.wl_serial)).apply {
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS
+            textDirection = View.TEXT_DIRECTION_LTR
+        }
+        val desc = edit(getString(R.string.wl_label))
+        val site = spinner(listOf(getString(R.string.all_sites)) + sites.map { it.name })
+        val days = edit(getString(R.string.wl_days), number = true)
+        form(getString(R.string.add_whitelist), serial, desc, label(R.string.site), site, days) {
+            if (serial.text.isBlank()) { toast(getString(R.string.wl_serial)); return@form }
+            val o = JSONObject().put("p_serial", serial.text.toString().trim()).put("p_label", desc.text.toString().trim())
+            if (site.selectedItemPosition > 0) o.put("p_site_id", sites[site.selectedItemPosition - 1].id)
+            days.text.toString().toIntOrNull()?.let { o.put("p_valid_days", it) }
+            rpc("add_whitelist", o)
         }
     }
 

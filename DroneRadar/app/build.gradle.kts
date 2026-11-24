@@ -45,4 +45,8 @@ dependencies {
     implementation("org.osmdroid:osmdroid-android:6.1.20")   // خريطة OpenStreetMap بدون مفتاح API
     implementation("com.squareup.okhttp3:okhttp:4.12.0")     // اتصال السيرفر
     implementation("com.google.android.gms:play-services-maps:19.0.0") // خريطة Google الستلايت
+    val camerax = "1.3.4"                                               // كاميرا "رأيت درون"
+    implementation("androidx.camera:camera-camera2:$camerax")
+    implementation("androidx.camera:camera-lifecycle:$camerax")
+    implementation("androidx.camera:camera-view:$camerax")
 }

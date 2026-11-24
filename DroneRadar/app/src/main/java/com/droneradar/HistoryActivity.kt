@@ -90,7 +90,70 @@ class HistoryActivity : AppCompatActivity() {
                 map?.addDot(L_LAST, lat, lon, Color.rgb(229, 57, 53), 14, r.optString("drone"), r.optString("site", ""))
             }
         }
+        // "I saw a drone" reports in the same period
+        val (sc, sb) = withContext(Dispatchers.IO) {
+            Backend.call("POST", "/rest/v1/rpc/sightings_since", JSONObject().put("p_since", since).toString())
+        }
+        if (sc in 200..299) {
+            val sl = JSONArray(sb)
+            if (sl.length() > 0) {
+                listBox.addView(TextView(this@HistoryActivity).apply {
+                    text = getString(R.string.sec_sightings) + " (${sl.length()})"; textSize = 17f
+                    setPadding(0, pad, 0, 0)
+                })
+                for (i in 0 until sl.length()) listBox.addView(sightingRow(sl.getJSONObject(i)))
+            }
+        }
         map?.fit(all)
+    }
+
+    private fun sightingRow(r: JSONObject): View {
+        val br = r.optDouble("bearing")
+        val fix = if (r.isNull("est_lat")) "" else "\n" + getString(R.string.est_position)
+        return TextView(this).apply {
+            text = "👁 ${r.str("reporter") ?: ""} • ${r.str("site") ?: getString(R.string.outside_sites)}\n" +
+                "🧭 ${br.toInt()}° ${Compass.dirName(this@HistoryActivity, br.toFloat())} • ⬆ ${r.optDouble("elevation", 0.0).toInt()}° • 🕒 ${local(r.optString("created_at"))}" +
+                (r.str("note")?.let { "\n📝 $it" } ?: "") + fix +
+                (if (r.str("photo_path") != null) "\n" + getString(R.string.show_photo) else "")
+            textSize = 14f
+            setPadding(pad, pad, pad, pad)
+            setBackgroundColor(0x1AFF6F00)
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                .apply { topMargin = pad / 2 }
+            setOnClickListener { showSighting(r) }
+        }
+    }
+
+    private fun showSighting(r: JSONObject): kotlinx.coroutines.Job = lifecycleScope.launch {
+        val m = map
+        val lat = r.optDouble("lat"); val lon = r.optDouble("lon"); val br = r.optDouble("bearing")
+        if (m != null && !lat.isNaN() && !lon.isNaN()) {
+            m.clear(L_LAST); m.clear(L_TRACK)
+            val d = 1500.0
+            val eLat = lat + d * Math.cos(Math.toRadians(br)) / 111_320.0
+            val eLon = lon + d * Math.sin(Math.toRadians(br)) / (111_320.0 * Math.cos(Math.toRadians(lat)))
+            m.addLine(L_TRACK, listOf(lat to lon, eLat to eLon), Color.rgb(255, 111, 0), 3f, dashed = true)
+            m.addDot(L_TRACK, lat, lon, Color.rgb(255, 111, 0), 16, getString(R.string.sighting_title, r.optString("reporter")))
+            val pts = mutableListOf(lat to lon, eLat to eLon)
+            val fLat = r.optDouble("est_lat"); val fLon = r.optDouble("est_lon")
+            if (!fLat.isNaN() && !fLon.isNaN()) {
+                m.addDot(L_TRACK, fLat, fLon, Color.rgb(156, 39, 176), 22, getString(R.string.est_position), getString(R.string.est_hint))
+                pts += fLat to fLon
+            }
+            m.fit(pts)
+        }
+        val path = r.str("photo_path") ?: return@launch
+        val bytes = withContext(Dispatchers.IO) { Backend.download("sightings/$path") }
+        val bmp = bytes?.let { android.graphics.BitmapFactory.decodeByteArray(it, 0, it.size) }
+        androidx.appcompat.app.AlertDialog.Builder(this@HistoryActivity)
+            .setTitle(getString(R.string.sighting_title, r.optString("reporter")))
+            .apply {
+                if (bmp != null) setView(android.widget.ImageView(this@HistoryActivity).apply {
+                    setImageBitmap(bmp); adjustViewBounds = true
+                }) else setMessage(R.string.no_photo)
+            }
+            .setPositiveButton(R.string.ok, null)
+            .show()
     }
 
     private fun row(r: JSONObject): View {
@@ -99,8 +162,9 @@ class HistoryActivity : AppCompatActivity() {
         val start = local(r.optString("started")); val end = local(r.optString("ended"))
         val h = if (r.isNull("max_height")) "—" else "%.0f".format(Locale.US, r.optDouble("max_height"))
         val op = if (r.isNull("op_lat")) getString(R.string.op_unknown) else getString(R.string.op_known)
+        val auth = if (r.optBoolean("authorized")) "  " + getString(R.string.authorized) else ""
         return TextView(this).apply {
-            text = "🚁 $serial\n🏢 $site • ${r.str("region") ?: ""}\n🕒 $start ← $end\n" +
+            text = "🚁 $serial$auth\n🏢 $site • ${r.str("region") ?: ""}\n🕒 $start ← $end\n" +
                 "👁 ${r.str("reporters") ?: ""} • ${r.optInt("points")} ${getString(R.string.points)} • ⬆ $h m • $op"
             textSize = 14f
             setPadding(pad, pad, pad, pad)

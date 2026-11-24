@@ -65,7 +65,8 @@ object DroneRepository {
         recordTrail(d)
         map[key] = d
         // Merge records that share a serial (same drone seen on BLE + Wi-Fi)
-        val isNew = !d.alerted && map.values.none { it !== d && it.serial != null && it.serial == d.serial && it.alerted }
+        val ready = d.serial != null || System.currentTimeMillis() - d.firstSeen > 3_000
+        val isNew = ready && !d.alerted && map.values.none { it !== d && it.serial != null && it.serial == d.serial && it.alerted }
         if (isNew) d.alerted = true
         publish()
         Backend.onDetection(d)

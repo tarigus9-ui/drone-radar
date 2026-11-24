@@ -104,4 +104,42 @@
     <string name="track_info">مسار %1$s — %2$d نقطة. الأحمر: الدرون، الأخضر المتقطع: المشغل</string>
     <string name="staff_online">🟢 متصل • 🔋%1$s</string>
     <string name="staff_offline">⚪ انقطع الاتصال • 🔋%1$s</string>
+    <string-array name="compass_dirs">
+        <item>شمال</item><item>شمال شرق</item><item>شرق</item><item>جنوب شرق</item>
+        <item>جنوب</item><item>جنوب غرب</item><item>غرب</item><item>شمال غرب</item>
+    </string-array>
+    <string name="saw_drone">👁 رأيت درون</string>
+    <string name="aim_hint">وجّه الكاميرا نحو الدرون…</string>
+    <string name="aim_reading">🧭 %1$d° %2$s  •  ⬆ %3$d°</string>
+    <string name="calib_hint">⚠️ البوصلة تحتاج معايرة: حرّك الهاتف في الهواء على شكل رقم 8</string>
+    <string name="sighting_note">ملاحظة (اختياري): لون، صوت، اتجاه الحركة…</string>
+    <string name="sighting_send">📸 سجّل البلاغ</string>
+    <string name="sending">جارٍ الإرسال…</string>
+    <string name="need_camera">يلزم إذن الكاميرا لالتقاط صورة الدرون</string>
+    <string name="no_compass">لا توجد قراءة من البوصلة بعد</string>
+    <string name="no_gps">لا يوجد موقع GPS بعد — انتظر ثوانٍ في مكان مفتوح</string>
+    <string name="sighting_sent">✅ أُرسل البلاغ</string>
+    <string name="sighting_sent_msg">وصل البلاغ إلى مديرك مع الاتجاه والصورة. إذا رآه حارس آخر من مكان مختلف وأبلغ، سيُحدَّد موقع الدرون تلقائياً.</string>
+    <string name="sighting_fixed">📍 تم تحديد موقع تقديري للدرون من بلاغك وبلاغ حارس آخر، وظهر عند المدير على الخريطة.</string>
+    <string name="sighting_alert_title">👁 بلاغ مشاهدة درون — %1$s</string>
+    <string name="sighting_alert_text">%1$s رأى درون باتجاه %2$s (%3$d°)</string>
+    <string name="sighting_fix_yes"> • 📍 موقع تقديري متاح</string>
+    <string name="sighting_title">👁 بلاغ: %1$s</string>
+    <string name="est_position">📍 موقع تقديري للدرون</string>
+    <string name="est_hint">من تقاطع اتجاهَي حارسين — تقريبي</string>
+    <string name="sec_whitelist">✅ الدرونات المصرّح بها</string>
+    <string name="add_whitelist">+ تصريح</string>
+    <string name="whitelist_hint">درونات الشركة وتصاريح التصوير: لا تُطلق تنبيهاً، وتظهر باللون الأخضر المزرق.</string>
+    <string name="wl_serial">الرقم التسلسلي للدرون</string>
+    <string name="wl_label">الوصف (مثال: درون الشركة، تصوير زفاف)</string>
+    <string name="wl_days">مدة التصريح بالأيام (فارغ = دائم)</string>
+    <string name="all_sites">— كل المنشآت —</string>
+    <string name="permanent">دائم</string>
+    <string name="until">حتى %1$s</string>
+    <string name="expired">منتهي</string>
+    <string name="delete_wl_q">حذف تصريح %1$s؟</string>
+    <string name="authorized">✅ مصرّح</string>
+    <string name="sec_sightings">👁 بلاغات المشاهدة</string>
+    <string name="show_photo">📷 عرض الصورة</string>
+    <string name="no_photo">لا توجد صورة</string>
 </resources>

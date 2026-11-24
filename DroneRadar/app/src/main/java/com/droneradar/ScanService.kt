@@ -46,6 +46,7 @@ class ScanService : Service() {
         super.onCreate()
         Alerts.createChannels(this)
         Backend.init(this)
+        Whitelist.load(this)
         val type = if (Build.VERSION.SDK_INT >= 29) ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION else 0
         ServiceCompat.startForeground(this, Alerts.SERVICE_NOTIF_ID, serviceNotification(0), type)
         startBle()
@@ -63,7 +64,9 @@ class ScanService : Service() {
                 runCatching { Backend.flush() }
                 if (tick % 12 == 0) runCatching { Backend.heartbeat(scanning = true) }
                 if (tick % 120 == 0) runCatching { Backend.refreshWho() }          // role may change
+                if (tick % 120 == 0) runCatching { Whitelist.refresh(this@ScanService) }
                 if (tick % 3 == 0) runCatching { ManagerAlerts.poll(this@ScanService) } // managers: staff detections
+                if (tick % 3 == 1) runCatching { ManagerAlerts.pollSightings(this@ScanService) }
                 tick++
                 delay(5_000)
             }
