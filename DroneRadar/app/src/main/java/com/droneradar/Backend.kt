@@ -51,10 +51,11 @@ object Backend {
     private val lastSent = HashMap<String, Long>()
     @Volatile var myLocation: Location? = null; private set
 
-    data class Status(val loggedIn: Boolean, val email: String?, val sent: Int, val pending: Int, val lastError: String?)
+    data class Status(val loggedIn: Boolean, val email: String?, val sent: Int, val pending: Int, val lastError: String?, val rev: Int = 0)
     private val _status = MutableStateFlow(Status(false, null, 0, 0, null))
     val status: StateFlow<Status> = _status
     private var sentCount = 0
+    private var rev = 0
     private var lastError: String? = null
 
     @Synchronized
@@ -93,8 +94,92 @@ object Backend {
     }
 
     fun logout() {
-        prefs().edit().remove("access").remove("refresh").remove("exp").remove("email").apply()
+        prefs().edit().remove("access").remove("refresh").remove("exp").remove("email")
+            .remove("who").apply()
         publish()
+    }
+
+    /** Blocking. New staff create their own account; the admin then attaches them to the company. */
+    fun signUp(email: String, password: String): String? {
+        if (!isConfigured) return "السيرفر غير مُعدّ في هذه النسخة"
+        if (password.length < 6) return "كلمة المرور 6 أحرف على الأقل"
+        val req = Request.Builder()
+            .url("$url/auth/v1/signup")
+            .header("apikey", anonKey)
+            .post(JSONObject().put("email", email.trim()).put("password", password).toString().toRequestBody(JSON))
+            .build()
+        return try {
+            http.newCall(req).execute().use { r ->
+                val txt = r.body?.string().orEmpty()
+                if (!r.isSuccessful) {
+                    return if (txt.contains("already", true)) "هذا البريد مسجّل مسبقاً — استخدم دخول" else "تعذّر إنشاء الحساب (${r.code})"
+                }
+                val j = JSONObject(txt)
+                if (j.has("access_token")) { saveSession(j, email.trim()); null }
+                else "أُنشئ الحساب — افتح بريدك لتأكيده ثم سجّل الدخول"
+            }
+        } catch (e: Exception) { "تعذّر الاتصال بالسيرفر" }
+    }
+
+    // ------------------------------------------------------------------ profile / role
+    data class Who(val hasProfile: Boolean, val role: String?, val name: String?, val company: String?,
+                   val region: String?, val site: String?)
+
+    val who: Who?
+        get() = prefs().getString("who", null)?.let { parseWho(JSONObject(it)) }
+
+    val isManager: Boolean get() = who?.role in setOf("admin", "region_manager", "site_manager")
+    val isAdmin: Boolean get() = who?.role == "admin"
+
+    private fun parseWho(j: JSONObject) = Who(
+        j.optBoolean("has_profile"), j.optStr("role"), j.optStr("full_name"),
+        j.optStr("company"), j.optStr("region"), j.optStr("site"))
+
+    private fun JSONObject.optStr(k: String): String? = if (isNull(k)) null else optString(k, "").ifBlank { null }
+
+    /** Blocking — refresh role/company from the server. */
+    fun refreshWho(): Who? {
+        if (!isLoggedIn) return null
+        val (code, body) = call("POST", "/rest/v1/rpc/whoami", "{}")
+        if (code !in 200..299) return who
+        val j = runCatching { JSONObject(body) }.getOrNull() ?: return who
+        prefs().edit().putString("who", j.toString()).apply()
+        publish()
+        return parseWho(j)
+    }
+
+    /** Blocking — call any REST path or RPC. Returns (http code, body). code 0 = no network. */
+    fun call(method: String, path: String, json: String? = null, prefer: String? = null, retried: Boolean = false): Pair<Int, String> {
+        val token = accessToken() ?: return 401 to "no session"
+        val b = Request.Builder()
+            .url(url + path)
+            .header("apikey", anonKey)
+            .header("Authorization", "Bearer $token")
+        if (prefer != null) b.header("Prefer", prefer)
+        val body = json?.toRequestBody(JSON)
+        when (method) {
+            "GET" -> b.get()
+            "DELETE" -> b.delete(body)
+            else -> b.method(method, body ?: "{}".toRequestBody(JSON))
+        }
+        return try {
+            http.newCall(b.build()).execute().use { r ->
+                val txt = r.body?.string().orEmpty()
+                if (r.code == 401 && !retried) { accessToken(forceRefresh = true); return call(method, path, json, prefer, true) }
+                r.code to txt
+            }
+        } catch (e: Exception) { 0 to (e.message ?: "network") }
+    }
+
+    /** Server error text → short Arabic message. */
+    fun errorText(code: Int, body: String): String = when {
+        code == 0 -> "لا يوجد اتصال بالإنترنت"
+        body.contains("admin only") -> "هذه العملية للمدير العام فقط"
+        body.contains("no account") -> "لا يوجد حساب بهذا البريد — اطلب من الشخص إنشاء حساب من التطبيق أولاً"
+        body.contains("another company") -> "هذا الحساب تابع لشركة أخرى"
+        body.contains("not in your company") -> "المنشأة أو الإقليم ليس من شركتك"
+        body.contains("cannot remove yourself") -> "لا يمكنك حذف نفسك"
+        else -> "خطأ من السيرفر ($code)"
     }
 
     private fun authRequest(grant: String, body: JSONObject): JSONObject {
@@ -139,7 +224,7 @@ object Backend {
     // ------------------------------------------------------------------ detections
     /** Called for every decoded Remote ID update. Cheap; queues at most one row per drone per 5 s. */
     fun onDetection(d: DroneInfo) {
-        if (!::app.isInitialized || !isConfigured) return
+        if (!::app.isInitialized || !isConfigured || d.remote) return
         val now = System.currentTimeMillis()
         synchronized(this) {
             if (now - (lastSent[d.key] ?: 0) < RESEND_MS) return
@@ -272,7 +357,7 @@ object Backend {
 
     private fun publish() {
         if (!::app.isInitialized) return
-        _status.value = Status(isLoggedIn, email, sentCount, synchronized(queue) { queue.size }, lastError)
+        _status.value = Status(isLoggedIn, email, sentCount, synchronized(queue) { queue.size }, lastError, ++rev)
     }
 
     private val isoFmt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply { timeZone = TimeZone.getTimeZone("UTC") }
