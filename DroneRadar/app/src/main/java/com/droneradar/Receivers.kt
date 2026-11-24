@@ -11,6 +11,7 @@ import android.os.Build
 class BleHitReceiver : BroadcastReceiver() {
     override fun onReceive(ctx: Context, intent: Intent) {
         Backend.init(ctx)
+        Whitelist.load(ctx)
         val results: List<ScanResult> = if (Build.VERSION.SDK_INT >= 33)
             intent.getParcelableArrayListExtra(BluetoothLeScanner.EXTRA_LIST_SCAN_RESULT, ScanResult::class.java).orEmpty()
         else @Suppress("DEPRECATION")

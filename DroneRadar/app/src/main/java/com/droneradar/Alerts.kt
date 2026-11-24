@@ -45,6 +45,7 @@ object Alerts {
         )
 
     fun notifyDrone(ctx: Context, d: DroneInfo) {
+        if (Whitelist.contains(d.serial)) return          // authorized drone — no alarm
         if (Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) return

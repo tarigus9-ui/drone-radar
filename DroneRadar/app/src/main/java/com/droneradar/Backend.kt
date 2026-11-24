@@ -171,6 +171,38 @@ object Backend {
         } catch (e: Exception) { 0 to (e.message ?: "network") }
     }
 
+    /** Logged-in user's id (from the access token). */
+    fun userId(): String? = runCatching {
+        val tok = accessToken() ?: return null
+        val payload = tok.split(".")[1]
+        val json = String(android.util.Base64.decode(payload, android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP or android.util.Base64.NO_PADDING))
+        JSONObject(json).getString("sub")
+    }.getOrNull()
+
+    /** Blocking — upload a file to Supabase Storage. Returns true on success. */
+    fun upload(bucketPath: String, bytes: ByteArray, contentType: String): Boolean {
+        val token = accessToken() ?: return false
+        val req = Request.Builder()
+            .url("$url/storage/v1/object/$bucketPath")
+            .header("apikey", anonKey)
+            .header("Authorization", "Bearer $token")
+            .header("x-upsert", "true")
+            .post(bytes.toRequestBody(contentType.toMediaType()))
+            .build()
+        return runCatching { http.newCall(req).execute().use { it.isSuccessful } }.getOrDefault(false)
+    }
+
+    /** Blocking — download a private file from Supabase Storage. */
+    fun download(bucketPath: String): ByteArray? {
+        val token = accessToken() ?: return null
+        val req = Request.Builder()
+            .url("$url/storage/v1/object/authenticated/$bucketPath")
+            .header("apikey", anonKey)
+            .header("Authorization", "Bearer $token")
+            .get().build()
+        return runCatching { http.newCall(req).execute().use { if (it.isSuccessful) it.body?.bytes() else null } }.getOrNull()
+    }
+
     /** Server error text → short Arabic message. */
     fun errorText(code: Int, body: String): String = when {
         code == 0 -> "لا يوجد اتصال بالإنترنت"
@@ -179,6 +211,9 @@ object Backend {
         body.contains("another company") -> "هذا الحساب تابع لشركة أخرى"
         body.contains("not in your company") -> "المنشأة أو الإقليم ليس من شركتك"
         body.contains("cannot remove yourself") -> "لا يمكنك حذف نفسك"
+        body.contains("managers only") -> "هذه العملية للمدراء فقط"
+        body.contains("own site only") -> "مدير المنشأة يضيف لمنشأته فقط"
+        body.contains("serial required") -> "أدخل الرقم التسلسلي"
         else -> "خطأ من السيرفر ($code)"
     }
 

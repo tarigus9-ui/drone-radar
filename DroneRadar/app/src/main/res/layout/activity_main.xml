@@ -54,4 +54,11 @@
             android:layout_marginTop="4dp" android:text="@string/legend"
             android:textColor="#666" android:textSize="12sp" />
     </LinearLayout>
+
+    <Button android:id="@+id/saw"
+        android:layout_width="wrap_content" android:layout_height="64dp"
+        android:layout_gravity="bottom|center_horizontal" android:layout_marginBottom="28dp"
+        android:paddingHorizontal="28dp" android:elevation="8dp"
+        android:background="#D32F2F" android:textColor="#FFFFFF" android:textSize="20sp"
+        android:text="@string/saw_drone" android:visibility="gone" />
 </FrameLayout>

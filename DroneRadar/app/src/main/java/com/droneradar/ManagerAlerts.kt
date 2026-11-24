@@ -41,7 +41,28 @@ object ManagerAlerts {
         prefs(ctx).edit().putString("alerts_since", last).apply()
     }
 
-    fun reset(ctx: Context) = prefs(ctx).edit().remove("alerts_since").apply()
+    fun reset(ctx: Context) = prefs(ctx).edit().remove("alerts_since").remove("sightings_since").apply()
+
+    /** Blocking — "I saw a drone" reports from staff. */
+    fun pollSightings(ctx: Context) {
+        if (!Backend.isLoggedIn || !Backend.isManager) return
+        val since = prefs(ctx).getString("sightings_since", null) ?: isoNow(-2 * 60_000L)
+        val (code, body) = Backend.call("POST", "/rest/v1/rpc/sightings_since", JSONObject().put("p_since", since).toString())
+        if (code !in 200..299) return
+        val rows = runCatching { JSONArray(body) }.getOrNull() ?: return
+        val last = if (rows.length() > 0) rows.getJSONObject(0).optString("created_at", since) else since  // newest first
+        for (i in rows.length() - 1 downTo 0) {
+            val r = rows.getJSONObject(i)
+            if (r.optBoolean("mine")) continue
+            val place = r.str("site") ?: ctx.getString(R.string.outside_sites)
+            val fix = if (r.dbl("est_lat") != null) ctx.getString(R.string.sighting_fix_yes) else ""
+            notify(ctx, "sighting-" + r.optLong("id"),
+                ctx.getString(R.string.sighting_alert_title, place),
+                ctx.getString(R.string.sighting_alert_text, r.str("reporter") ?: "حارس",
+                    Compass.dirName(ctx, r.optDouble("bearing").toFloat()), r.optDouble("bearing").toInt()) + fix)
+        }
+        prefs(ctx).edit().putString("sightings_since", last).apply()
+    }
 
     private fun handle(ctx: Context, r: JSONObject) {
         val serial = r.str("serial")
