@@ -13,8 +13,8 @@
     <string name="perm_needed">يجب منح أذونات الموقع والبلوتوث والواي فاي</string>
     <string name="start">تشغيل</string>
     <string name="stop">إيقاف</string>
-    <string name="center">موقعي</string>
-    <string name="legend">🔴 الدرون   🟢 المشغل   ━ خط الربط</string>
+    <string name="center">📍 موقعي</string>
+    <string name="legend">🔴 درون  🟢 مشغل  🔵 حارس متصل  ⚪ غير متصل  🟡 منشأة</string>
     <string name="operator">المشغل (الطيار)</string>
     <string name="operator_id">رقم المشغل</string>
     <string name="source">المصدر</string>
@@ -46,7 +46,7 @@
     <string name="role_region">مدير إقليم</string>
     <string name="role_site">مدير منشأة</string>
     <string name="role_guard">حارس</string>
-    <string name="admin_short">إدارة</string>
+    <string name="admin_short">⚙️ إدارة</string>
     <string name="admin_title">إدارة الشركة</string>
     <string name="admin_info">%1$s • %2$s\nاضغط مطولاً على أي عنصر لحذفه</string>
     <string name="loading">جارٍ التحميل…</string>
@@ -90,4 +90,18 @@
     <string name="remote_source">عن بُعد — %1$s</string>
     <string name="mgr_alert_title">🚨 درون في %1$s</string>
     <string name="mgr_alert_text">رصده: %1$s • الرقم: %2$s • %3$s</string>
+    <string name="map_sat">🛰️ قمر</string>
+    <string name="map_plain">🗺️ خريطة</string>
+    <string name="history_short">📜 السجل</string>
+    <string name="history_title">سجل الحوادث</string>
+    <string name="f_day">24 ساعة</string>
+    <string name="f_week">7 أيام</string>
+    <string name="f_month">30 يوم</string>
+    <string name="history_count">%1$d حادثة — اضغط على أي حادثة لرسم مسارها</string>
+    <string name="points">نقطة</string>
+    <string name="track_start">بداية المسار</string>
+    <string name="track_end">آخر موقع</string>
+    <string name="track_info">مسار %1$s — %2$d نقطة. الأحمر: الدرون، الأخضر المتقطع: المشغل</string>
+    <string name="staff_online">🟢 متصل • 🔋%1$s</string>
+    <string name="staff_offline">⚪ انقطع الاتصال • 🔋%1$s</string>
 </resources>
