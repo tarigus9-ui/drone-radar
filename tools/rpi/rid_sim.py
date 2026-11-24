@@ -123,15 +123,21 @@ class Hci:
         self.s.bind((dev,))
         # receive only events: Command Complete (0x0E) and Command Status (0x0F)
         SOL_HCI, HCI_FILTER = 0, 2
-        flt = struct.pack("<IIIH", 1 << 4, (1 << 0x0E) | (1 << 0x0F), 0, 0)
-        self.s.setsockopt(SOL_HCI, HCI_FILTER, flt)
+        # struct hci_ufilter is 16 bytes with padding; newer kernels reject a shorter buffer (EINVAL)
+        flt = struct.pack("<IIIHxx", 1 << 4, (1 << 0x0E) | (1 << 0x0F), 0, 0)
+        self.events = True
+        try:
+            self.s.setsockopt(SOL_HCI, HCI_FILTER, flt)
+        except OSError:
+            self.events = False         # cannot read replies → send blindly
         self.s.settimeout(1.0)
         self.mode = None                # "legacy" or "extended"
 
     def cmd(self, ogf, ocf, params=b"", check=True):
         opcode = (ogf << 10) | ocf
         self.s.send(struct.pack("<BHB", 0x01, opcode, len(params)) + params)
-        if not check:
+        if not check or not self.events:
+            time.sleep(0.02)
             return 0
         deadline = time.time() + 1.0
         while time.time() < deadline:
