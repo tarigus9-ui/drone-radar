@@ -21,12 +21,36 @@ data class DroneInfo(
     var alerted: Boolean = false,
     var remote: Boolean = false,          // seen by another guard, received from the platform
     var remoteInfo: String? = null,       // "site • reporter"
+    var opTrail: List<Pair<Double, Double>> = emptyList(),     // live path of the operator
+    var droneTrail: List<Pair<Double, Double>> = emptyList(),  // live path of the drone
 ) {
     val label: String get() = serial ?: operatorId ?: key
 }
 
 /** Process-wide store shared by the scanner service and the map screen. */
 object DroneRepository {
+    private const val TRAIL_MAX = 600
+    private const val TRAIL_MIN_M = 3.0
+
+    private fun dist(a: Pair<Double, Double>, b: Pair<Double, Double>): Double {
+        val dLat = (a.first - b.first) * 111_320.0
+        val dLon = (a.second - b.second) * 111_320.0 * Math.cos(Math.toRadians(a.first))
+        return Math.sqrt(dLat * dLat + dLon * dLon)
+    }
+
+    private fun extend(trail: List<Pair<Double, Double>>, lat: Double?, lon: Double?): List<Pair<Double, Double>> {
+        if (lat == null || lon == null) return trail
+        val p = lat to lon
+        val last = trail.lastOrNull()
+        if (last != null && dist(last, p) < TRAIL_MIN_M) return trail
+        return (trail + p).takeLast(TRAIL_MAX)
+    }
+
+    private fun recordTrail(d: DroneInfo) {
+        d.opTrail = extend(d.opTrail, d.opLat, d.opLon)
+        d.droneTrail = extend(d.droneTrail, d.lat, d.lon)
+    }
+
     private const val STALE_MS = 60_000L
     private val map = LinkedHashMap<String, DroneInfo>()
     private val _drones = MutableStateFlow<List<DroneInfo>>(emptyList())
@@ -38,6 +62,7 @@ object DroneRepository {
         val d = map[key] ?: DroneInfo(key)
         if (!decode(d)) return null
         d.source = source; d.rssi = rssi; d.lastSeen = System.currentTimeMillis()
+        recordTrail(d)
         map[key] = d
         // Merge records that share a serial (same drone seen on BLE + Wi-Fi)
         val isNew = !d.alerted && map.values.none { it !== d && it.serial != null && it.serial == d.serial && it.alerted }
@@ -53,6 +78,7 @@ object DroneRepository {
         val d = map[key] ?: DroneInfo(key, remote = true)
         if (!d.remote) return            // we already see it ourselves — local data wins
         fill(d)
+        recordTrail(d)
         d.lastSeen = System.currentTimeMillis()
         map[key] = d
         publish()

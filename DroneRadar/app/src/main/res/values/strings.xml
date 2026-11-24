@@ -14,7 +14,7 @@
     <string name="start">تشغيل</string>
     <string name="stop">إيقاف</string>
     <string name="center">📍 موقعي</string>
-    <string name="legend">🔴 درون  🟢 مشغل  🔵 حارس متصل  ⚪ غير متصل  🟡 منشأة</string>
+    <string name="legend">🔴 درون  🟢 مشغل (┅ مساره)  🔵 حارس  ⚪ منقطع  🟡 منشأة</string>
     <string name="operator">المشغل (الطيار)</string>
     <string name="operator_id">رقم المشغل</string>
     <string name="source">المصدر</string>

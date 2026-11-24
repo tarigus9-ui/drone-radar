@@ -286,6 +286,9 @@ class MainActivity : AppCompatActivity() {
         for (d in drones) {
             val dronePt = if (d.lat != null && d.lon != null) d.lat!! to d.lon!! else null
             val opPt = if (d.opLat != null && d.opLon != null) d.opLat!! to d.opLon!! else null
+            // live trails: drone (thin red) and operator (green dashed) — how they moved during this incident
+            m.addLine(L_DRONES, d.droneTrail, Color.argb(150, 229, 57, 53), 2f)
+            m.addLine(L_DRONES, d.opTrail, Color.rgb(0, 200, 83), 3f, dashed = true)
             if (dronePt != null && opPt != null) m.addLine(L_DRONES, listOf(opPt, dronePt), Color.argb(200, 255, 140, 0), 2.5f)
             opPt?.let {
                 m.addDot(L_DRONES, it.first, it.second, Color.rgb(0, 200, 83), 18,
