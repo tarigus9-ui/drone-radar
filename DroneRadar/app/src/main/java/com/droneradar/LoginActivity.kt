@@ -60,6 +60,9 @@ class LoginActivity : AppCompatActivity() {
         val signup = Button(this, null, android.R.attr.borderlessButtonStyle).apply { text = getString(R.string.signup) }
         val change = Button(this, null, android.R.attr.borderlessButtonStyle).apply { text = getString(R.string.change_server) }
         val offline = Button(this, null, android.R.attr.borderlessButtonStyle).apply { text = getString(R.string.offline_mode) }
+        val lang = Button(this, null, android.R.attr.borderlessButtonStyle).apply {
+            text = getString(R.string.language); setOnClickListener { Lang.pick(this@LoginActivity) }
+        }
         var newAccount = false
 
         fun busy(b: Boolean) { btn.isEnabled = !b; signup.isEnabled = !b; progress.visibility = if (b) View.VISIBLE else View.GONE }
@@ -95,10 +98,10 @@ class LoginActivity : AppCompatActivity() {
             addView(LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER
-                layoutDirection = View.LAYOUT_DIRECTION_RTL
+                layoutDirection = View.LAYOUT_DIRECTION_LOCALE
                 setPadding(pad, pad, pad, pad)
                 addView(title); addView(server); addView(email); addView(pass); addView(invite); addView(fullName)
-                addView(btn); addView(progress); addView(msg); addView(signup); addView(change); addView(offline)
+                addView(btn); addView(progress); addView(msg); addView(signup); addView(change); addView(offline); addView(lang)
             })
         })
     }

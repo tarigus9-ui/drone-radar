@@ -60,7 +60,7 @@ class SetupActivity : AppCompatActivity() {
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            layoutDirection = View.LAYOUT_DIRECTION_RTL
+            layoutDirection = View.LAYOUT_DIRECTION_LOCALE
             setPadding(pad, pad, pad, pad)
             addView(TextView(context).apply { text = getString(R.string.setup_title); textSize = 22f; gravity = Gravity.CENTER })
             addView(TextView(context).apply {
@@ -78,6 +78,9 @@ class SetupActivity : AppCompatActivity() {
             addView(Button(context).apply { text = getString(R.string.setup_paste); setOnClickListener { fromClipboard() } })
             addView(Button(context, null, android.R.attr.borderlessButtonStyle).apply {
                 text = getString(R.string.setup_manual); setOnClickListener { manualDialog() }
+            })
+            addView(Button(context, null, android.R.attr.borderlessButtonStyle).apply {
+                text = getString(R.string.language); setOnClickListener { Lang.pick(this@SetupActivity) }
             })
             if (BuildConfig.SUPABASE_URL.isNotBlank()) addView(Button(context, null, android.R.attr.borderlessButtonStyle).apply {
                 text = getString(R.string.setup_demo); setOnClickListener { apply(null) }

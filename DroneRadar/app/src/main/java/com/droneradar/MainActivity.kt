@@ -204,6 +204,7 @@ class MainActivity : AppCompatActivity() {
                 startActivity(Intent(this, LoginActivity::class.java)); finish()
             }
             .setNegativeButton(R.string.cancel, null)
+            .setNeutralButton(R.string.language) { _, _ -> Lang.pick(this) }
             .show()
     }
 
@@ -354,6 +355,8 @@ class MainActivity : AppCompatActivity() {
         else appendLine("${getString(R.string.source)}: ${d.source}  (${d.rssi} dBm)")
         appendLine("${getString(R.string.height)}: ${f(d.height)} m  |  ${getString(R.string.speed)}: ${f(d.speed)} m/s")
         d.operatorId?.let { appendLine("${getString(R.string.operator_id)}: $it") }
+        GlobalId.label(d)?.let { appendLine("🌍 $it") }
+        if (GlobalId.secretLeaked(d)) appendLine(getString(R.string.op_secret_leak))
         d.description?.let { appendLine(it) }
         if (d.spoof.isNotEmpty()) append("⚠️ ").append(SpoofCheck.describe(this@MainActivity, d.spoof))
     }.trim()

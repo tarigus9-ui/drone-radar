@@ -53,7 +53,7 @@ class AdminActivity : AppCompatActivity() {
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            layoutDirection = View.LAYOUT_DIRECTION_RTL
+            layoutDirection = View.LAYOUT_DIRECTION_LOCALE
             setPadding(pad, pad, pad, pad)
             addView(TextView(context).apply { text = getString(R.string.admin_title); textSize = 22f })
             addView(info)
@@ -119,7 +119,7 @@ class AdminActivity : AppCompatActivity() {
         siteList.removeAllViews()
         if (sites.isEmpty()) siteList.addView(row(getString(R.string.none_yet)))
         sites.forEach { s ->
-            siteList.addView(row("🏢 ${s.name}\n${s.region ?: "—"} • ${s.radius} م • %.5f, %.5f".format(Locale.US, s.lat, s.lon)) {
+            siteList.addView(row("🏢 ${s.name}\n${s.region ?: "—"} • ${s.radius} ${getString(R.string.unit_m)} • %.5f, %.5f".format(Locale.US, s.lat, s.lon)) {
                 confirm(getString(R.string.delete_site_q, s.name)) {
                     rpc("admin_delete_site", JSONObject().put("p_site_id", s.id))
                 }
@@ -283,7 +283,7 @@ class AdminActivity : AppCompatActivity() {
     private fun form(title: String, vararg views: View, onOk: () -> Unit) {
         val box = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            layoutDirection = View.LAYOUT_DIRECTION_RTL
+            layoutDirection = View.LAYOUT_DIRECTION_LOCALE
             setPadding(pad, pad / 2, pad, 0)
             views.forEach { addView(it) }
         }

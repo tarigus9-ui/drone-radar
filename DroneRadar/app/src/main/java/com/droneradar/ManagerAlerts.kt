@@ -58,7 +58,7 @@ object ManagerAlerts {
             val fix = if (r.dbl("est_lat") != null) ctx.getString(R.string.sighting_fix_yes) else ""
             notify(ctx, "sighting-" + r.optLong("id"),
                 ctx.getString(R.string.sighting_alert_title, place),
-                ctx.getString(R.string.sighting_alert_text, r.str("reporter") ?: "حارس",
+                ctx.getString(R.string.sighting_alert_text, r.str("reporter") ?: ctx.getString(R.string.guard_default),
                     Compass.dirName(ctx, r.optDouble("bearing").toFloat()), r.optDouble("bearing").toInt()) + fix)
         }
         prefs(ctx).edit().putString("sightings_since", last).apply()
@@ -68,7 +68,7 @@ object ManagerAlerts {
         val serial = r.str("serial")
         val key = "remote-" + (serial ?: r.str("drone_key") ?: r.optLong("id").toString())
         val site = r.str("site")
-        val reporter = r.str("reporter") ?: "حارس"
+        val reporter = r.str("reporter") ?: ctx.getString(R.string.guard_default)
         val place = site ?: ctx.getString(R.string.outside_sites)
 
         DroneRepository.upsertRemote(key) { d ->

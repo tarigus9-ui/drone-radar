@@ -50,6 +50,7 @@ object SpoofCheck {
         if (lat != null && lon != null && oLat != null && oLon != null && meters(lat, lon, oLat, oLon) > 15_000) f += "operator_far"
         val serial = d.serial
         if (d.idType == 1 && serial != null && !cta2063Ok(serial)) f += "bad_serial"
+        if (GlobalId.badId(d)) f += "bad_operator_id"
         if (serial != null && f.any { it in STRONG } && Whitelist.contains(serial, d.operatorId)) f += "whitelist_spoof"
         d.spoof = f
     }
@@ -62,7 +63,7 @@ object SpoofCheck {
     /** Authorized and no strong sign of forgery → stay silent. */
     fun silentBecauseWhitelisted(d: DroneInfo) = Whitelist.contains(d.serial, d.operatorId) && d.spoof.none { it in STRONG }
 
-    fun describe(ctx: Context, flags: Collection<String>): String = flags.joinToString("، ") { f ->
+    fun describe(ctx: Context, flags: Collection<String>): String = flags.joinToString(if (ctx.resources.configuration.locales[0].language == "ar") "، " else ", ") { f ->
         when (f) {
             "impossible_speed" -> ctx.getString(R.string.sp_speed)
             "impossible_alt" -> ctx.getString(R.string.sp_alt)
@@ -70,6 +71,7 @@ object SpoofCheck {
             "signal_mismatch" -> ctx.getString(R.string.sp_signal)
             "operator_far" -> ctx.getString(R.string.sp_opfar)
             "bad_serial" -> ctx.getString(R.string.sp_serial)
+            "bad_operator_id" -> ctx.getString(R.string.sp_opid)
             "not_heard_nearby" -> ctx.getString(R.string.sp_nearby)
             "whitelist_spoof" -> ctx.getString(R.string.sp_wl)
             else -> f
