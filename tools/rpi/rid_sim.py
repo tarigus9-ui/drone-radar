@@ -8,13 +8,17 @@ circling over Dubai Silicon Oasis, so the DroneRadar app can be tested without a
 Simple web page with Start / Stop:  http://localhost:8080   (also reachable from a phone on the same network)
 
 Run:   sudo python3 rid_sim.py
-Needs: Raspberry Pi OS (Bookworm), built-in Bluetooth. Python standard library only — nothing to install.
+Needs: Raspberry Pi OS (Bookworm), built-in Bluetooth. Bluetooth needs nothing extra. Wi-Fi mode needs hostapd:  sudo apt install -y hostapd
 
 ⚠️ For testing only. Short range (tens of metres). Do not run near airports, and stop it when not testing.
    The serial number starts with "TST" so it is obviously a test drone.
 """
 
 import fcntl
+import os
+import secrets
+import shutil
+import subprocess
 import json
 import math
 import socket
@@ -35,6 +39,9 @@ OPERATOR_ID = "ARE-TEST-OP-0001"
 SELF_DESC = "DroneRadar RPi test"
 HTTP_PORT = 8080
 HCI_DEV = 0                             # hci0
+WIFI_IF = "wlan0"
+WIFI_CHANNEL = 6
+WIFI_SSID = "RID-TEST-DRONE"
 
 MSG = 25
 
@@ -217,6 +224,89 @@ class Hci:
             raise HciError(f"data update status 0x{st:02X}")
 
 # ----------------------------------------------------------------- simulator
+
+def wifi_vendor_ie(msgs, counter):
+    """Wi-Fi Beacon vendor element (ASTM F3411): DD len | OUI FA0BBC | type 0D | counter | message pack."""
+    pack = bytes([0xF2, MSG, len(msgs)]) + b"".join(msgs)
+    body = bytes([0xFA, 0x0B, 0xBC, 0x0D, counter & 0xFF]) + pack
+    return bytes([0xDD, len(body)]) + body
+
+# ----------------------------------------------------------------- Wi-Fi Beacon (hostapd, needs root)
+class WifiBeacon:
+    """Runs a hidden-purpose access point whose beacons carry the Remote ID element.
+    While it runs the Pi's Wi-Fi cannot be used for internet; it is given back on stop."""
+    CTRL_DIR = "/var/run/rid_hostapd"
+    CONF = "/tmp/rid_hostapd.conf"
+
+    def __init__(self):
+        self.proc = None
+        self.sock = None
+        self.local = None
+
+    def start(self, first_ie):
+        if not shutil.which("hostapd"):
+            raise RuntimeError("برنامج hostapd غير مثبت — نفّذ: sudo apt install -y hostapd")
+        subprocess.run(["rfkill", "unblock", "wifi"], capture_output=True)
+        subprocess.run(["nmcli", "device", "set", WIFI_IF, "managed", "no"], capture_output=True)
+        time.sleep(1)
+        with open(self.CONF, "w") as f:
+            f.write("\n".join([
+                f"interface={WIFI_IF}", "driver=nl80211", f"ctrl_interface={self.CTRL_DIR}",
+                f"ssid={WIFI_SSID}", "hw_mode=g", f"channel={WIFI_CHANNEL}", "country_code=AE",
+                "beacon_int=100",
+                # locked network: nobody can join, the beacons are all we need
+                "wpa=2", "wpa_key_mgmt=WPA-PSK", "rsn_pairwise=CCMP",
+                f"wpa_passphrase={secrets.token_hex(16)}",
+                f"vendor_elements={first_ie.hex()}", ""]))
+        self.proc = subprocess.Popen(["hostapd", self.CONF], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        path = os.path.join(self.CTRL_DIR, WIFI_IF)
+        for _ in range(40):
+            if self.proc.poll() is not None:
+                out = (self.proc.stdout.read() or "").strip().splitlines()
+                self._give_back()
+                raise RuntimeError("hostapd توقف: " + (out[-1] if out else "سبب غير معروف"))
+            if os.path.exists(path):
+                break
+            time.sleep(0.25)
+        else:
+            self.stop()
+            raise RuntimeError("hostapd لم يبدأ خلال 10 ثوانٍ")
+        self.local = f"/tmp/rid_ctrl_{os.getpid()}"
+        try: os.unlink(self.local)
+        except FileNotFoundError: pass
+        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+        self.sock.bind(self.local)
+        self.sock.connect(path)
+        self.sock.settimeout(2)
+
+    def _req(self, cmd):
+        self.sock.send(cmd.encode())
+        r = self.sock.recv(4096).decode(errors="ignore").strip()
+        if not r.startswith("OK"):
+            raise RuntimeError(f"hostapd: {cmd.split()[0]} → {r}")
+
+    def update(self, ie):
+        self._req("SET vendor_elements " + ie.hex())
+        self._req("UPDATE_BEACON")
+
+    def _give_back(self):
+        subprocess.run(["nmcli", "device", "set", WIFI_IF, "managed", "yes"], capture_output=True)
+
+    def stop(self):
+        if self.sock:
+            try: self.sock.close()
+            except OSError: pass
+            self.sock = None
+        if self.local:
+            try: os.unlink(self.local)
+            except OSError: pass
+        if self.proc and self.proc.poll() is None:
+            self.proc.terminate()
+            try: self.proc.wait(5)
+            except subprocess.TimeoutExpired: self.proc.kill()
+        self.proc = None
+        self._give_back()
+
 class Sim:
     def __init__(self):
         self.running = False
@@ -228,34 +318,66 @@ class Sim:
         self.error = ""
         self.thread = None
         self.hci = None
+        self.wifi = None
+        self.use_ble = True
+        self.use_wifi = False
+        self.wifi_sent = 0
+        self.wifi_error = ""
 
-    def start(self, scenario):
+    def start(self, scenario, ble=True, wifi=False):
         with self.lock:
             self.scenario = scenario if scenario in ("normal", "spoof") else "normal"
             if self.running:
                 return
-            try:
-                self.hci = self.hci or Hci()
-                self.hci.start()
-                self.error = ""
-            except PermissionError:
+            self.use_ble, self.use_wifi = ble, wifi
+            self.error = ""; self.wifi_error = ""
+            if not (ble or wifi):
+                self.error = "اختر بلوتوث أو واي فاي (أو كليهما)"; return
+            if os.geteuid() != 0:
                 self.error = "يجب التشغيل بصلاحية الجذر: sudo python3 rid_sim.py"; return
-            except HciError as e:
-                self.error = f"شريحة البلوتوث رفضت البث: {e} — جرّب: sudo systemctl stop bluetooth"; return
-            except Exception as e:   # no Bluetooth adapter / Python without Bluetooth support
-                self.error = f"تعذّر الوصول إلى البلوتوث: {e}"; return
+            ok_ble = ok_wifi = False
+            if ble:
+                try:
+                    self.hci = self.hci or Hci()
+                    self.hci.start(); ok_ble = True
+                except HciError as e:
+                    self.error = f"شريحة البلوتوث رفضت البث: {e} — جرّب: sudo systemctl stop bluetooth"
+                except Exception as e:
+                    self.error = f"تعذّر الوصول إلى البلوتوث: {e}"
+            if wifi:
+                try:
+                    self.t0 = time.time()
+                    self.wifi = WifiBeacon()
+                    self.wifi.start(self.wifi_ie(0, 0))
+                    ok_wifi = True
+                except Exception as e:
+                    self.wifi = None
+                    self.wifi_error = f"واي فاي: {e}"
+            if not (ok_ble or ok_wifi):
+                return
+            self.use_ble, self.use_wifi = ok_ble, ok_wifi
             self.running = True
             self.t0 = time.time()
             self.thread = threading.Thread(target=self.loop, daemon=True)
             self.thread.start()
 
+    def wifi_ie(self, t, counter):
+        lat, lon, hd, sp, op_lat, op_lon = self.position(t)
+        msgs = [msg_basic_id(), msg_location(lat, lon, hd, sp, HEIGHT_M), msg_system(op_lat, op_lon),
+                msg_operator_id(), msg_self_id()]
+        return wifi_vendor_ie(msgs, counter)
+
     def stop(self):
         with self.lock:
             self.running = False
+        if self.thread:
+            self.thread.join(2); self.thread = None
         try:
-            if self.hci: self.hci.stop()
-        except OSError:
+            if self.hci and self.use_ble: self.hci.stop()
+        except (OSError, HciError):
             pass
+        if self.wifi:
+            self.wifi.stop(); self.wifi = None
 
     def position(self, t):
         omega = SPEED_MS / RADIUS_M
@@ -277,6 +399,7 @@ class Sim:
         counter = 0
         order = ["loc", "basic", "loc", "system", "loc", "operator", "loc", "self"]
         i = 0
+        wcount = 0; next_wifi = 0.0
         while True:
             with self.lock:
                 if not self.running:
@@ -284,6 +407,15 @@ class Sim:
             t = time.time() - self.t0
             lat, lon, hd, sp, op_lat, op_lon = self.position(t)
             self.lat, self.lon, self.op_lat, self.op_lon = lat, lon, op_lat, op_lon
+            if self.use_wifi and self.wifi and time.time() >= next_wifi:
+                next_wifi = time.time() + 1.0
+                try:
+                    self.wifi.update(self.wifi_ie(t, wcount)); wcount += 1; self.wifi_sent += 1
+                    self.wifi_error = ""
+                except Exception as e:
+                    self.wifi_error = f"واي فاي: {e}"
+            if not self.use_ble:
+                time.sleep(0.2); continue
             kind = order[i % len(order)]; i += 1
             msg = {
                 "loc": lambda: msg_location(lat, lon, hd, sp, HEIGHT_M),
@@ -306,7 +438,9 @@ class Sim:
             "lat": round(self.lat, 6), "lon": round(self.lon, 6),
             "op_lat": round(self.op_lat, 6), "op_lon": round(self.op_lon, 6),
             "serial": SERIAL, "area": AREA_NAME, "error": self.error,
-            "mode": (self.hci.mode if self.hci else None),
+            "mode": (self.hci.mode if (self.hci and self.use_ble and self.running) else None),
+            "ble": self.use_ble, "wifi": self.use_wifi, "wifi_sent": self.wifi_sent,
+            "wifi_error": self.wifi_error, "ssid": WIFI_SSID, "channel": WIFI_CHANNEL,
         }
 
 SIM = Sim()
@@ -327,12 +461,16 @@ PAGE = """<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8">
  .info{font-size:14px;color:#c8d6ee;line-height:1.9;text-align:right;margin-top:14px}
  .warn{font-size:12px;color:#ffcc80;margin-top:16px}
  .err{color:#ff8a80;font-size:15px}
+ .tx{display:flex;gap:12px;justify-content:center;margin:10px 0;background:#132744;border-radius:10px;padding:6px}
+ label.inl{display:inline-block;margin:6px 10px;font-size:18px}
 </style></head><body><div class="card" id="card">
 <h1>🛸 بث درون تجريبي (Remote ID)</h1>
 <div class="area">📍 المنطقة: __AREA__</div>
 <div id="state"><span class="dot"></span><span id="stext">متوقف</span></div>
 <label><input type="radio" name="sc" value="normal" checked> درون طبيعي يدور فوق المنطقة</label>
 <label><input type="radio" name="sc" value="spoof"> درون ببيانات مزيفة (لاختبار كشف التزييف ⚠️)</label>
+<div class="tx"><label class="inl"><input type="checkbox" id="ble" checked> 📶 بلوتوث</label>
+<label class="inl"><input type="checkbox" id="wifi"> 📡 واي فاي</label></div>
 <button id="start" onclick="go('start')">▶ تشغيل</button>
 <button id="stop" onclick="go('stop')">■ إيقاف</button>
 <div class="info" id="info"></div>
@@ -340,7 +478,10 @@ PAGE = """<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8">
 <div class="warn">للاختبار فقط — مدى قصير (عشرات الأمتار). أوقف البث بعد الانتهاء، ولا تشغّله قرب المطارات.</div>
 </div><script>
 function sc(){return document.querySelector('input[name=sc]:checked').value}
-async function go(a){await fetch('/'+a+'?scenario='+sc(),{method:'POST'});refresh()}
+async function go(a){
+ const q='?scenario='+sc()+'&ble='+(document.getElementById('ble').checked?1:0)+'&wifi='+(document.getElementById('wifi').checked?1:0);
+ document.getElementById('stext').textContent=a=='start'?'جارٍ التشغيل…':'جارٍ الإيقاف…';
+ await fetch('/'+a+q,{method:'POST'});refresh()}
 async function refresh(){
  const s=await (await fetch('/status')).json();
  document.getElementById('card').className='card'+(s.running?' on':'');
@@ -348,8 +489,10 @@ async function refresh(){
  document.getElementById('info').innerHTML=
   'الرقم التسلسلي: '+s.serial+'<br>موقع الدرون: '+s.lat+', '+s.lon+
   '<br>موقع المشغل: '+s.op_lat+', '+s.op_lon+'<br>رسائل مُرسلة: '+s.sent+
-  (s.mode?'<br>طريقة البث: '+(s.mode=='extended'?'بلوتوث 5 (حديثة)':'بلوتوث 4 (قديمة)'):'');
- document.getElementById('err').textContent=s.error||'';
+  (s.mode?'<br>طريقة البث: '+(s.mode=='extended'?'بلوتوث 5 (حديثة)':'بلوتوث 4 (قديمة)'):'')+
+  (s.running&&s.wifi?'<br>واي فاي: الشبكة '+s.ssid+' — قناة '+s.channel+' — تحديثات: '+s.wifi_sent+
+   '<br><small>⚠️ إنترنت الواي فاي في الراسبيري متوقف أثناء البث، ويعود عند الإيقاف</small>':'');
+ document.getElementById('err').textContent=[s.error,s.wifi_error].filter(x=>x).join(' — ');
 }
 setInterval(refresh,1000);refresh();
 </script></body></html>"""
@@ -371,9 +514,12 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         sc = "spoof" if "scenario=spoof" in self.path else "normal"
+        ble = "ble=0" not in self.path
+        wifi = "wifi=1" in self.path
         if self.path.startswith("/start"):
-            SIM.stop() if SIM.running and SIM.scenario != sc else None
-            SIM.start(sc)
+            if SIM.running and (SIM.scenario != sc or SIM.use_ble != ble or SIM.use_wifi != wifi):
+                SIM.stop()
+            SIM.start(sc, ble, wifi)
         elif self.path.startswith("/stop"):
             SIM.stop()
         self._send(200, json.dumps(SIM.status(), ensure_ascii=False), "application/json; charset=utf-8")
@@ -394,6 +540,9 @@ def selftest():
     import re
     assert re.fullmatch(r"[0-9A-HJ-NP-Z]{4}[1-9A-F][0-9A-HJ-NP-Z]{1,15}", SERIAL)
     assert len(SERIAL) - 5 == "0123456789ABCDEF".index(SERIAL[4])
+    ie = wifi_vendor_ie([b, m], 3)
+    assert ie[0] == 0xDD and ie[1] == len(ie) - 2 and ie[2:6] == bytes([0xFA, 0x0B, 0xBC, 0x0D])
+    assert ie[7] == 0xF2 and ie[8] == 25 and ie[9] == 2 and len(ie) == 2 + 5 + 3 + 50
     print("selftest OK")
 
 if __name__ == "__main__":
