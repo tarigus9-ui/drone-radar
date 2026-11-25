@@ -112,7 +112,7 @@ class SightingActivity : AppCompatActivity(), SensorEventListener {
             addView(note); addView(send, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, (64 * resources.displayMetrics.density).toInt()).apply { topMargin = pad })
         }
         setContentView(FrameLayout(this).apply {
-            layoutDirection = View.LAYOUT_DIRECTION_RTL
+            layoutDirection = View.LAYOUT_DIRECTION_LOCALE
             setBackgroundColor(Color.BLACK)
             addView(preview)
             addView(cross, FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.CENTER))

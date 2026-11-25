@@ -46,7 +46,7 @@ object Whitelist {
             .filter { it.optBoolean("active", true) && it.has("h") }
             .associate {
                 it.getString("h") to Entry(
-                    it.optString("label", "").takeIf { l -> l.isNotBlank() && l != "null" } ?: "مصرّح",
+                    it.optString("label", "").takeIf { l -> l.isNotBlank() && l != "null" } ?: "✓",
                     if (it.isNull("oh")) null else it.optString("oh").ifBlank { null })
             }
     }.getOrDefault(emptyMap())

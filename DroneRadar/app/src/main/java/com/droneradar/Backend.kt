@@ -45,6 +45,8 @@ object Backend {
     val serverName: String? get() = cfg?.name
 
     private lateinit var app: Context
+    /** Localized text (follows the in-app language). */
+    private fun str(id: Int, vararg args: Any): String = app.getString(id, *args)
     private var httpVersion = -1
     private var httpClient: OkHttpClient = OkHttpClient()
     /** Rebuilt when the customer server (or its certificate pin) changes. */
@@ -114,7 +116,7 @@ object Backend {
     // ------------------------------------------------------------------ auth
     /** Blocking — call from a background thread. Returns null on success or an error message. */
     fun login(email: String, password: String): String? {
-        if (!isConfigured) return "السيرفر غير مُعدّ في هذه النسخة"
+        if (!isConfigured) return str(R.string.e_not_configured)
         val body = JSONObject().put("email", email.trim()).put("password", password)
         return try {
             val res = authRequest("password", body)
@@ -124,8 +126,8 @@ object Backend {
         } catch (e: Exception) {
             Log.w(TAG, "login", e)
             when {
-                e.message?.contains("invalid", true) == true -> "البريد أو كلمة المرور غير صحيحة"
-                else -> "تعذّر الاتصال بالسيرفر"
+                e.message?.contains("invalid", true) == true -> str(R.string.e_bad_login)
+                else -> str(R.string.e_no_server)
             }
         }
     }
@@ -138,10 +140,10 @@ object Backend {
 
     /** Blocking. New staff create their account with the one-time invite code from their admin. */
     fun signUp(email: String, password: String, invite: String, fullName: String?): String? {
-        if (!isConfigured) return "السيرفر غير مُعدّ في هذه النسخة"
-        if (password.length < 8) return "كلمة المرور 8 أحرف على الأقل"
+        if (!isConfigured) return str(R.string.e_not_configured)
+        if (password.length < 8) return str(R.string.e_pw_short)
         val code = invite.uppercase().filter { it.isLetterOrDigit() }
-        if (code.length != 10) return "أدخل رمز الدعوة (10 أحرف) من مديرك"
+        if (code.length != 10) return str(R.string.e_need_invite)
         prefs().edit().putString("pending_invite", code).putString("pending_name", fullName?.trim().orEmpty()).apply()
         val req = Request.Builder()
             .url("$url/auth/v1/signup")
@@ -153,13 +155,13 @@ object Backend {
                 val txt = r.body?.string().orEmpty()
                 if (!r.isSuccessful) {
                     // Existing account (e.g. a code that failed earlier): log in and use the new code.
-                    return if (txt.contains("already", true)) login(email, password) else "تعذّر إنشاء الحساب (${r.code})"
+                    return if (txt.contains("already", true)) login(email, password) else str(R.string.e_signup, r.code)
                 }
                 val j = JSONObject(txt)
                 if (j.has("access_token")) { saveSession(j, email.trim()); redeemPendingInvite() }
-                else "أُنشئ الحساب — افتح بريدك لتأكيده ثم سجّل الدخول"
+                else str(R.string.e_confirm_mail)
             }
-        } catch (e: Exception) { "تعذّر الاتصال بالسيرفر" }
+        } catch (e: Exception) { str(R.string.e_no_server) }
     }
 
     /** Blocking. Joins the company with a stored invite code (after sign-up / first login). */
@@ -173,7 +175,7 @@ object Backend {
             return null
         }
         prefs().edit().remove("pending_invite").remove("pending_name").apply()
-        return if (c == 0) "تعذّر الاتصال بالسيرفر" else "رمز الدعوة غير صحيح أو منتهي — اطلب رمزاً جديداً"
+        return if (c == 0) str(R.string.e_no_server) else str(R.string.e_bad_invite)
     }
 
     // ------------------------------------------------------------------ profile / role
@@ -260,18 +262,18 @@ object Backend {
 
     /** Server error text → short Arabic message. */
     fun errorText(code: Int, body: String): String = when {
-        code == 0 -> "لا يوجد اتصال بالإنترنت"
-        body.contains("admin only") -> "هذه العملية للمدير العام فقط"
-        body.contains("no account") -> "لا يوجد حساب بهذا البريد — اطلب من الشخص إنشاء حساب من التطبيق أولاً"
-        body.contains("another company") -> "هذا الحساب تابع لشركة أخرى"
-        body.contains("not in your company") -> "المنشأة أو الإقليم ليس من شركتك"
-        body.contains("cannot remove yourself") -> "لا يمكنك حذف نفسك"
-        body.contains("managers only") -> "هذه العملية للمدراء فقط"
-        body.contains("own site only") -> "مدير المنشأة يضيف لمنشأته فقط"
-        body.contains("serial required") -> "أدخل الرقم التسلسلي"
-        body.contains("region managers") -> "مدير الإقليم يضيف لمنشأة من إقليمه فقط"
-        body.contains("rate limit") -> "إرسال كثير جداً — انتظر دقيقة"
-        else -> "خطأ من السيرفر ($code)"
+        code == 0 -> str(R.string.e_no_internet)
+        body.contains("admin only") -> str(R.string.e_admin_only)
+        body.contains("no account") -> str(R.string.e_no_account)
+        body.contains("another company") -> str(R.string.e_other_company)
+        body.contains("not in your company") -> str(R.string.e_not_yours)
+        body.contains("cannot remove yourself") -> str(R.string.e_not_self)
+        body.contains("managers only") -> str(R.string.e_managers_only)
+        body.contains("own site only") -> str(R.string.e_own_site)
+        body.contains("serial required") -> str(R.string.e_serial_req)
+        body.contains("region managers") -> str(R.string.e_region_only)
+        body.contains("rate limit") -> str(R.string.e_rate)
+        else -> str(R.string.e_server, code)
     }
 
     private fun authRequest(grant: String, body: JSONObject): JSONObject {
@@ -395,7 +397,7 @@ object Backend {
     }
 
     private fun post(path: String, json: String, prefer: String, retried: Boolean = false): Boolean {
-        val token = accessToken() ?: run { lastError = "انتهت الجلسة — سجّل الدخول"; return false }
+        val token = accessToken() ?: run { lastError = str(R.string.e_session); return false }
         val req = Request.Builder()
             .url(url + path)
             .header("apikey", anonKey)
@@ -410,13 +412,13 @@ object Backend {
                     r.code == 401 && !retried -> { accessToken(forceRefresh = true); post(path, json, prefer, true) }
                     else -> {
                         val msg = runCatching { JSONObject(r.body?.string() ?: "").optString("message") }.getOrNull().orEmpty()
-                        lastError = "السيرفر ${r.code}" + if (msg.isNotBlank()) " — ${msg.take(80)}" else ""
+                        lastError = str(R.string.e_server_msg, r.code) + if (msg.isNotBlank()) " — ${msg.take(80)}" else ""
                         Log.w(TAG, "post $path ${r.code} $msg"); false
                     }
                 }
             }
         } catch (e: Exception) {
-            lastError = "لا يوجد اتصال"; false
+            lastError = str(R.string.e_offline); false
         }
     }
 

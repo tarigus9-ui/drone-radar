@@ -57,7 +57,7 @@ class ReportActivity : AppCompatActivity() {
         setContentView(LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
-            layoutDirection = View.LAYOUT_DIRECTION_RTL
+            layoutDirection = View.LAYOUT_DIRECTION_LOCALE
             setPadding(pad, pad, pad, pad)
             addView(TextView(context).apply { text = getString(R.string.rp_screen); textSize = 22f })
             addView(info)

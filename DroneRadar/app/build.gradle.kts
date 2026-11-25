@@ -9,8 +9,8 @@ android {
         applicationId = "com.droneradar"
         minSdk = 26          // Android 8.0 (مطلوب لـ Wi-Fi NaN)
         targetSdk = 35
-        versionCode = 3
-        versionName = "2.0"
+        versionCode = 4
+        versionName = "2.1"
         // Google Maps (satellite). Empty → the app falls back to OpenStreetMap.
         val mapsKey = (project.findProperty("MAPS_API_KEY") ?: "").toString()
         buildConfigField("String", "MAPS_API_KEY", "\"$mapsKey\"")
