@@ -261,6 +261,9 @@ object Backend {
     fun onDetection(d: DroneInfo) {
         if (!::app.isInitialized || !isConfigured || d.remote) return
         val now = System.currentTimeMillis()
+        // The serial (Basic ID) usually arrives a second after the first position. Wait for it (up to
+        // 10 s) so the server does not split one flight into a MAC-address incident and a serial one.
+        if (d.serial == null && d.operatorId == null && now - d.firstSeen < 10_000) return
         synchronized(this) {
             if (now - (lastSent[d.key] ?: 0) < RESEND_MS) return
             lastSent[d.key] = now
