@@ -31,11 +31,11 @@ object GlobalId {
 
     private fun country3(c: String): Pair<String, String?>? = ISO3[c]?.let { c to flag(it) }
 
-    /** Luhn mod 36 check character over [s] (lower-case base-36 chars). */
-    fun luhn36(s: String): Char {
+    /** Luhn mod 36 check character over [s] (lower-case base-36 chars); null = not computable. */
+    fun luhn36(s: String): Char? {
         var factor = 2; var total = 0
         for (ch in s.reversed()) {
-            val cp = A36.indexOf(ch); if (cp < 0) return '?'
+            val cp = A36.indexOf(ch); if (cp < 0) return null
             var add = factor * cp
             factor = if (factor == 2) 1 else 2
             add = add / 36 + add % 36
@@ -45,20 +45,25 @@ object GlobalId {
     }
 
     private val EU16 = Regex("^([A-Z]{3})([0-9a-z]{12})([0-9a-z])$")
-    private val EU20 = Regex("^([A-Z]{3})([0-9a-z]{12})([0-9a-z])-([0-9a-z]{3})$")
+    /** With the 3 secret chars (should never be broadcast). The dash is optional: 19 or 20 chars. */
+    private val EU20 = Regex("^([A-Z]{3})([0-9a-z]{12})([0-9a-z])-?([0-9a-z]{3})$")
     private val FAA = Regex("^FA[0-9A-Z]{8}$")
     private val JU = Regex("^JU[0-9A-Z]{10}$")
 
     /** null = nothing to say (empty / unknown national format). */
     fun operator(raw: String?): Info? {
         var id = raw?.trim()?.trimEnd('\u0000')?.takeIf { it.isNotEmpty() } ?: return null
+        // The standard's way of saying "no operator ID": not a format to judge.
+        if (id.equals("NULL", ignoreCase = true)) return Info(null, null, "undeclared", null)
         // some apps upper-case the whole number; the standard is COUNTRY + lower-case base-36
-        if ((id.length == 16 || id.length == 20) && id.take(3).all { it.isLetter() })
+        if ((id.length in 16..20) && id.take(3).all { it.isLetter() })
             id = id.take(3).uppercase() + id.drop(3).lowercase()
         EU20.matchEntire(id)?.let { m ->
             val (c, base, chk, secret) = m.destructured
             val ctry = country3(c)
-            val good = ctry != null && luhn36(base + secret) == chk[0]
+            val sum = luhn36(base + secret)
+            // ok: false = computed and wrong (or no such country); null = could not be computed
+            val good = if (ctry == null) false else sum?.let { it == chk[0] }
             return Info(c, ctry?.second, "EN4709", good, "secret_broadcast")
         }
         EU16.matchEntire(id)?.let { m ->
@@ -97,9 +102,18 @@ object GlobalId {
         return parts.takeIf { it.isNotEmpty() }?.joinToString(" • ")
     }
 
-    /** Weak forgery hint: an operator / registration ID that breaks its own country's format. */
-    fun badId(d: DroneInfo): Boolean =
-        operator(d.operatorId)?.ok == false || (d.idType == 2 && uas(2, d.serial)?.ok == false)
+    /**
+     * THE one place that decides whether a drone's identity numbers are malformed.
+     * Returns the weak forgery flags: "bad_serial" (CTA-2063 / CAA registration) and "bad_operator_id".
+     */
+    fun idFlags(d: DroneInfo): Set<String> {
+        val f = mutableSetOf<String>()
+        val ua = uas(d.idType, d.serial)
+        if ((d.idType == 1 || d.idType == 2) && ua?.ok == false) f += "bad_serial"
+        if (operator(d.operatorId)?.ok == false) f += "bad_operator_id"
+        return f
+    }
+    fun badId(d: DroneInfo): Boolean = idFlags(d).isNotEmpty()
 
     fun secretLeaked(d: DroneInfo): Boolean = operator(d.operatorId)?.note == "secret_broadcast"
 }

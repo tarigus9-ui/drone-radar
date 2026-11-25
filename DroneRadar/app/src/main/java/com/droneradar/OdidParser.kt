@@ -60,6 +60,9 @@ object OdidParser {
                 if (validLatLon(lat, lon)) { d.lat = lat; d.lon = lon }
                 d.altGeo = alt(b, 15)
                 d.height = alt(b, 17)
+                // bytes 21-22: time of this position, 1/10 s since the full hour (0xFFFF = unknown)
+                val ts = (u8(b, 21) or (u8(b, 22) shl 8))
+                d.ts10 = if (ts < 36_000) ts else null
             }
             TYPE_SELF_ID -> {
                 val t = ascii(b, 2, 23)
