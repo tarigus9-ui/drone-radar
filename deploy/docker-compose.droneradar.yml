@@ -1,0 +1,14 @@
+# DroneRadar additions on top of docker-compose.yml + docker-compose.caddy.yml
+#  * Caddy serves HTTPS with the customer's own certificate (made by install.sh) — no internet / Let's Encrypt
+#  * the database pooler is not published on the network (only the API on 443 is reachable)
+services:
+  caddy:
+    ports: !override
+      - "443:443"
+    volumes:
+      - ./volumes/proxy/caddy:/etc/caddy
+      - caddy_data:/data
+      - caddy_config:/config
+
+  supavisor:
+    ports: !reset []
