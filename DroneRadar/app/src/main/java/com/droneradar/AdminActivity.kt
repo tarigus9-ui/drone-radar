@@ -61,7 +61,10 @@ class AdminActivity : AppCompatActivity() {
             addView(regionList)
             addView(section(getString(R.string.sec_sites), getString(R.string.add_site)) { addSiteDialog() })
             addView(siteList)
-            addView(section(getString(R.string.sec_staff), getString(R.string.add_staff)) { assignDialog() })
+            addView(section(getString(R.string.sec_staff), getString(R.string.invite_staff)) { inviteDialog() })
+            addView(Button(context, null, android.R.attr.borderlessButtonStyle).apply {
+                text = getString(R.string.add_staff); setOnClickListener { assignDialog() }
+            })
             addView(TextView(context).apply { text = getString(R.string.staff_hint); textSize = 12f })
             addView(staffList)
             addView(section(getString(R.string.sec_whitelist), getString(R.string.add_whitelist)) { addWhitelistDialog() })
@@ -149,8 +152,9 @@ class AdminActivity : AppCompatActivity() {
                     w.str("valid_until") == null -> getString(R.string.permanent)
                     else -> getString(R.string.until, w.str("valid_until")!!.take(10))
                 }
-                val serial = w.getString("serial")
-                wlList.addView(row("✅ $serial\n${w.str("label") ?: ""} • ${w.str("site") ?: getString(R.string.all_sites)} • $until") {
+                val serial = w.str("serial") ?: "—"
+                val op = w.str("operator_id")?.let { "\n👤 $it" } ?: ""
+                wlList.addView(row("✅ $serial$op\n${w.str("label") ?: ""} • ${w.str("site") ?: getString(R.string.all_sites)} • $until") {
                     confirm(getString(R.string.delete_wl_q, serial)) {
                         rpc("remove_whitelist", JSONObject().put("p_id", w.getLong("id")))
                     }
@@ -166,13 +170,19 @@ class AdminActivity : AppCompatActivity() {
             textDirection = View.TEXT_DIRECTION_LTR
         }
         val desc = edit(getString(R.string.wl_label))
+        val operator = edit(getString(R.string.wl_operator)).apply {
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS
+            textDirection = View.TEXT_DIRECTION_LTR
+        }
         val site = spinner(listOf(getString(R.string.all_sites)) + sites.map { it.name })
-        val days = edit(getString(R.string.wl_days), number = true)
-        form(getString(R.string.add_whitelist), serial, desc, label(R.string.site), site, days) {
+        val days = edit(getString(R.string.wl_days), number = true).apply { setText("90") }
+        val hint = TextView(this).apply { text = getString(R.string.wl_operator_hint); textSize = 12f }
+        form(getString(R.string.add_whitelist), serial, operator, hint, desc, label(R.string.site), site, days) {
             if (serial.text.isBlank()) { toast(getString(R.string.wl_serial)); return@form }
             val o = JSONObject().put("p_serial", serial.text.toString().trim()).put("p_label", desc.text.toString().trim())
             if (site.selectedItemPosition > 0) o.put("p_site_id", sites[site.selectedItemPosition - 1].id)
             days.text.toString().toIntOrNull()?.let { o.put("p_valid_days", it) }
+            operator.text.toString().trim().takeIf { it.isNotEmpty() }?.let { o.put("p_operator_id", it) }
             rpc("add_whitelist", o)
         }
     }
@@ -209,6 +219,34 @@ class AdminActivity : AppCompatActivity() {
     }
 
     private val roles = listOf("guard", "site_manager", "region_manager", "admin")
+
+    /** One-time code for a new staff member: they enter it when creating their account. */
+    private fun inviteDialog() {
+        val name = edit(getString(R.string.full_name))
+        val role = spinner(roles.map { roleName(it) })
+        val site = spinner(listOf(getString(R.string.no_site)) + sites.map { "${it.name} (${it.region ?: "—"})" })
+        val region = spinner(listOf(getString(R.string.no_region)) + regions.map { it.name })
+        form(getString(R.string.invite_staff), name, label(R.string.role), role, label(R.string.site), site,
+            label(R.string.region_for_manager), region) {
+            val o = JSONObject().put("p_role", roles[role.selectedItemPosition]).put("p_full_name", name.text.toString().trim())
+            if (site.selectedItemPosition > 0) o.put("p_site_id", sites[site.selectedItemPosition - 1].id)
+            if (region.selectedItemPosition > 0) o.put("p_region_id", regions[region.selectedItemPosition - 1].id)
+            lifecycleScope.launch {
+                val (code, body) = io { Backend.call("POST", "/rest/v1/rpc/admin_create_invite", o.toString()) }
+                if (code !in 200..299) { toast(Backend.errorText(code, body)); return@launch }
+                val inv = body.trim().trim('"')
+                val text = getString(R.string.invite_share, Backend.serverName ?: "", inv)
+                AlertDialog.Builder(this@AdminActivity).setTitle(R.string.invite_staff)
+                    .setMessage(getString(R.string.invite_created, inv))
+                    .setPositiveButton(R.string.share) { _, _ ->
+                        startActivity(android.content.Intent.createChooser(
+                            android.content.Intent(android.content.Intent.ACTION_SEND).setType("text/plain")
+                                .putExtra(android.content.Intent.EXTRA_TEXT, text), null))
+                    }
+                    .setNegativeButton(R.string.ok, null).show()
+            }
+        }
+    }
 
     private fun assignDialog() {
         val email = edit(getString(R.string.email)).apply {

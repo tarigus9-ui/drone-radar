@@ -71,6 +71,11 @@ class MainActivity : AppCompatActivity() {
         Backend.init(this)
         Whitelist.load(this)
         val offlineOk = getSharedPreferences("backend", MODE_PRIVATE).getBoolean("offline_ok", false)
+        if (!ServerConfig.isSet(this) && !offlineOk) {
+            startActivity(Intent(this, SetupActivity::class.java))
+            finish()
+            return
+        }
         if (Backend.isConfigured && !Backend.isLoggedIn && !offlineOk) {
             startActivity(Intent(this, LoginActivity::class.java))
             finish()
@@ -164,12 +169,15 @@ class MainActivity : AppCompatActivity() {
             !w.hasProfile -> "\n" + getString(R.string.waiting_activation)
             else -> "\n" + getString(R.string.role_line, roleName(w.role), w.site ?: w.region ?: w.company ?: "")
         }
-        account.text = when {
+        // Guards see one plain status; counters and e-mail only for admins (diagnostics).
+        val line = when {
             !st.loggedIn -> getString(R.string.acc_offline)
-            st.lastError != null && st.pending > 0 -> getString(R.string.acc_error, st.lastError) +
-                "  " + getString(R.string.acc_online, st.email ?: "", st.sent, st.pending)
-            else -> getString(R.string.acc_online, st.email ?: "", st.sent, st.pending)
-        } + roleLine
+            st.lastError != null && st.pending > 0 -> getString(R.string.acc_error, st.lastError)
+            st.pending > 0 -> getString(R.string.acc_queued, st.pending)
+            else -> getString(R.string.acc_ok)
+        }
+        val diag = if (Backend.isAdmin) "\n" + getString(R.string.acc_online, st.email ?: "", st.sent, st.pending) else ""
+        account.text = line + roleLine + diag
         adminBtn.visibility = if (Backend.isAdmin) View.VISIBLE else View.GONE
         historyBtn.visibility = if (st.loggedIn && w?.hasProfile == true) View.VISIBLE else View.GONE
         sawBtn.visibility = historyBtn.visibility
@@ -301,7 +309,7 @@ class MainActivity : AppCompatActivity() {
         m.addDot(L_SIGHT, lat, lon, orange, 14, getString(R.string.sighting_title, r.optString("reporter")),
             "${br.toInt()}° ${Compass.dirName(this, br.toFloat())} • ${r.optString("created_at").take(16).replace('T', ' ')}")
         val eLat = r.optDouble("est_lat"); val eLon = r.optDouble("est_lon")
-        if (!eLat.isNaN() && !eLon.isNaN()) m.addDot(L_SIGHT, eLat, eLon, Color.rgb(156, 39, 176), 22, getString(R.string.est_position), getString(R.string.est_hint))
+        if (!eLat.isNaN() && !eLon.isNaN()) m.addDot(L_SIGHT, eLat, eLon, Color.rgb(255, 111, 0), 24, getString(R.string.est_position), getString(R.string.est_hint))
     }
 
     // ---------- Drones ----------
@@ -323,7 +331,7 @@ class MainActivity : AppCompatActivity() {
             // live trails: drone (thin red) and operator (green dashed) — how they moved during this incident
             m.addLine(L_DRONES, d.droneTrail, Color.argb(150, 229, 57, 53), 2f)
             m.addLine(L_DRONES, d.opTrail, Color.rgb(0, 200, 83), 3f, dashed = true)
-            if (dronePt != null && opPt != null) m.addLine(L_DRONES, listOf(opPt, dronePt), Color.argb(200, 255, 140, 0), 2.5f)
+            if (dronePt != null && opPt != null) m.addLine(L_DRONES, listOf(opPt, dronePt), Color.argb(140, 0, 200, 83), 1.5f)
             opPt?.let {
                 m.addDot(L_DRONES, it.first, it.second, Color.rgb(0, 200, 83), 18,
                     getString(R.string.operator), "${d.operatorId ?: ""}  ${d.label}")

@@ -50,7 +50,7 @@ object SpoofCheck {
         if (lat != null && lon != null && oLat != null && oLon != null && meters(lat, lon, oLat, oLon) > 15_000) f += "operator_far"
         val serial = d.serial
         if (d.idType == 1 && serial != null && !cta2063Ok(serial)) f += "bad_serial"
-        if (serial != null && f.any { it in STRONG } && Whitelist.contains(serial)) f += "whitelist_spoof"
+        if (serial != null && f.any { it in STRONG } && Whitelist.contains(serial, d.operatorId)) f += "whitelist_spoof"
         d.spoof = f
     }
 
@@ -60,7 +60,7 @@ object SpoofCheck {
     fun isSuspicious(flags: Set<String>) = flags.isNotEmpty()
 
     /** Authorized and no strong sign of forgery → stay silent. */
-    fun silentBecauseWhitelisted(d: DroneInfo) = Whitelist.contains(d.serial) && d.spoof.none { it in STRONG }
+    fun silentBecauseWhitelisted(d: DroneInfo) = Whitelist.contains(d.serial, d.operatorId) && d.spoof.none { it in STRONG }
 
     fun describe(ctx: Context, flags: Collection<String>): String = flags.joinToString("، ") { f ->
         when (f) {

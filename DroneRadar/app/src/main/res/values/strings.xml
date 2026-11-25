@@ -14,7 +14,7 @@
     <string name="start">تشغيل</string>
     <string name="stop">إيقاف</string>
     <string name="center">📍 موقعي</string>
-    <string name="legend">🔴 درون  🟢 مشغل (┅ مساره)  🔵 حارس  ⚪ منقطع  🟡 منشأة</string>
+    <string name="legend">🔴 درون  🟣 مشبوه  ✅ مصرّح  🟢 مشغّل  🔵 حارس  ⚪ منقطع  🟠 مشاهدة  🟡 منشأة</string>
     <string name="operator">المشغل (الطيار)</string>
     <string name="operator_id">رقم المشغل</string>
     <string name="source">المصدر</string>
@@ -35,7 +35,9 @@
     <string name="fill_fields">أدخل البريد وكلمة المرور</string>
     <string name="acc_online">☁️ %1$s • أُرسل %2$d • بالانتظار %3$d</string>
     <string name="acc_offline">☁️ غير متصل بالمنصة — اضغط لتسجيل الدخول</string>
-    <string name="acc_error">⚠️ %1$s</string>
+    <string name="acc_error">🔴 %1$s</string>
+    <string name="acc_ok">🟢 متصل بالمنصة</string>
+    <string name="acc_queued">🟠 بلا اتصال — %1$d كشف سيُرسل تلقائياً</string>
     <string name="logout_q">تسجيل الخروج من %1$s؟</string>
     <string name="logout">خروج</string>
     <string name="cancel">إلغاء</string>
@@ -55,8 +57,8 @@
     <string name="sec_staff">👥 الموظفون</string>
     <string name="add_region">+ إقليم</string>
     <string name="add_site">+ منشأة</string>
-    <string name="add_staff">+ موظف</string>
-    <string name="staff_hint">الموظف ينشئ حسابه من التطبيق أولاً، ثم تضيفه هنا ببريده وتحدد دوره ومنشأته.</string>
+    <string name="add_staff">ربط حساب موجود بالبريد</string>
+    <string name="staff_hint">أنشئ "رمز دعوة" للموظف الجديد وأرسله له؛ يدخله عند إنشاء حسابه فيُضاف مباشرة بدوره ومنشأته.</string>
     <string name="none_yet">لا يوجد شيء بعد</string>
     <string name="region_name">اسم الإقليم (مثال: السعودية - الرياض)</string>
     <string name="country_code">رمز الدولة (AE, SA, QA…)</string>
@@ -132,7 +134,7 @@
     <string name="whitelist_hint">درونات الشركة وتصاريح التصوير: لا تُطلق تنبيهاً، وتظهر باللون الأخضر المزرق.</string>
     <string name="wl_serial">الرقم التسلسلي للدرون</string>
     <string name="wl_label">الوصف (مثال: درون الشركة، تصوير زفاف)</string>
-    <string name="wl_days">مدة التصريح بالأيام (فارغ = دائم)</string>
+    <string name="wl_days">مدة التصريح بالأيام (0 = دائم، للمدير العام فقط)</string>
     <string name="all_sites">— كل المنشآت —</string>
     <string name="permanent">دائم</string>
     <string name="until">حتى %1$s</string>
@@ -198,4 +200,32 @@
     <string name="rp_op">مشغل معروف</string>
     <string name="rp_lang_en">🌐 لغة التقرير: English — اضغط للتغيير</string>
     <string name="rp_lang_ar">🌐 لغة التقرير: العربية — اضغط للتغيير</string>
+
+    <!-- per-customer server setup -->
+    <string name="setup_title">ربط الهاتف بسيرفر شركتك</string>
+    <string name="setup_sub">امسح رمز الإعداد (QR) الذي يعطيك إياه مسؤول النظام</string>
+    <string name="setup_current">السيرفر الحالي: %1$s</string>
+    <string name="setup_point">وجّه الكاميرا نحو رمز الإعداد…</string>
+    <string name="setup_cam_denied">الكاميرا غير متاحة — استخدم اللصق أو الإدخال اليدوي</string>
+    <string name="setup_bad_code">هذا ليس رمز إعداد DroneRadar صالحاً</string>
+    <string name="setup_paste">لصق رمز الإعداد المنسوخ</string>
+    <string name="setup_manual">إدخال العنوان يدوياً</string>
+    <string name="setup_demo">استخدام سيرفر التجربة</string>
+    <string name="setup_key">مفتاح الاتصال (anon key)</string>
+    <string name="setup_pin">بصمة الشهادة (اختياري)</string>
+    <string name="setup_confirm_title">تأكيد السيرفر</string>
+    <string name="setup_confirm">الشركة: %1$s\nالعنوان: %2$s\n\nسيتم تسجيل الخروج من أي سيرفر سابق.</string>
+    <string name="setup_pinned">🔒 اتصال مثبّت بشهادة السيرفر</string>
+    <string name="login_server">🏢 %1$s</string>
+    <string name="change_server">تغيير السيرفر</string>
+    <string name="invite_code">رمز الدعوة (من مديرك)</string>
+    <string name="invite_hint">أدخل رمز الدعوة الذي أرسله لك مديرك، وكلمة مرور من 8 أحرف على الأقل.</string>
+    <string name="create_account">إنشاء الحساب</string>
+    <string name="have_account">لدي حساب — تسجيل الدخول</string>
+    <string name="invite_staff">+ دعوة موظف</string>
+    <string name="invite_created">رمز الدعوة:\n\n%1$s\n\nصالح 7 أيام ولمرة واحدة. أرسله للموظف ليدخله عند إنشاء حسابه.</string>
+    <string name="invite_share">دعوة للانضمام إلى رادار الدرون (%1$s)\nرمز الدعوة: %2$s\nثبّت التطبيق ← اربطه بسيرفر الشركة ← "إنشاء حساب جديد" ← أدخل الرمز.</string>
+    <string name="share">مشاركة</string>
+    <string name="wl_operator">رقم المشغّل (Operator ID) — مُستحسن</string>
+    <string name="wl_operator_hint">ربط التصريح برقم المشغّل يمنع من ينسخ الرقم التسلسلي من انتحال درون مصرّح.</string>
 </resources>

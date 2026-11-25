@@ -9,28 +9,46 @@ android {
         applicationId = "com.droneradar"
         minSdk = 26          // Android 8.0 (مطلوب لـ Wi-Fi NaN)
         targetSdk = 35
-        versionCode = 2
-        versionName = "1.1"
-        // Platform server (Supabase). The anon key is public by design; data is protected by RLS.
-        buildConfigField("String", "SUPABASE_URL", "\"${project.findProperty("SUPABASE_URL") ?: ""}\"")
-        buildConfigField("String", "SUPABASE_ANON_KEY", "\"${project.findProperty("SUPABASE_ANON_KEY") ?: ""}\"")
+        versionCode = 3
+        versionName = "2.0"
         // Google Maps (satellite). Empty → the app falls back to OpenStreetMap.
         val mapsKey = (project.findProperty("MAPS_API_KEY") ?: "").toString()
         buildConfigField("String", "MAPS_API_KEY", "\"$mapsKey\"")
         manifestPlaceholders["MAPS_API_KEY"] = mapsKey
     }
     buildFeatures { buildConfig = true }
-    // Same signing key on every GitHub build, so new versions install over old ones.
-    // (Debug key only — use a private release key before publishing to Google Play.)
+    // Private release key: provided by CI secrets (never stored in the repository).
+    val ksPath = System.getenv("DR_KEYSTORE") ?: ""
     signingConfigs {
-        getByName("debug") {
-            storeFile = file("shared-debug.keystore")
-            storePassword = "android"
-            keyAlias = "androiddebugkey"
-            keyPassword = "android"
+        create("release") {
+            if (ksPath.isNotBlank()) {
+                storeFile = file(ksPath)
+                storePassword = System.getenv("DR_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("DR_KEY_ALIAS")
+                keyPassword = System.getenv("DR_KEY_PASSWORD")
+            }
         }
     }
-    buildTypes { release { isMinifyEnabled = false } }
+    buildTypes {
+        release {
+            isMinifyEnabled = false
+            if (ksPath.isNotBlank()) signingConfig = signingConfigs.getByName("release")
+        }
+    }
+    // demo  = built-in test server (for demos);  client = no server inside, set by the customer's setup QR.
+    flavorDimensions += "edition"
+    productFlavors {
+        create("demo") {
+            dimension = "edition"
+            buildConfigField("String", "SUPABASE_URL", "\"${project.findProperty("SUPABASE_URL") ?: ""}\"")
+            buildConfigField("String", "SUPABASE_ANON_KEY", "\"${project.findProperty("SUPABASE_ANON_KEY") ?: ""}\"")
+        }
+        create("client") {
+            dimension = "edition"
+            buildConfigField("String", "SUPABASE_URL", "\"\"")
+            buildConfigField("String", "SUPABASE_ANON_KEY", "\"\"")
+        }
+    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -49,4 +67,6 @@ dependencies {
     implementation("androidx.camera:camera-camera2:$camerax")
     implementation("androidx.camera:camera-lifecycle:$camerax")
     implementation("androidx.camera:camera-view:$camerax")
+    implementation("com.google.zxing:core:3.5.3")                       // QR إعداد السيرفر (بدون خدمات Google)
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")   // تشفير جلسة الدخول على الهاتف
 }
