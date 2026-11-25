@@ -205,8 +205,9 @@ class SightingActivity : AppCompatActivity(), SensorEventListener {
             var photoPath: String? = null
             if (jpg != null) {
                 val uid = Backend.userId()
-                if (uid != null) {
-                    val path = "$uid/${System.currentTimeMillis()}.jpg"
+                val cid = Backend.who?.companyId ?: Backend.refreshWho()?.companyId
+                if (uid != null && cid != null) {
+                    val path = "$cid/$uid/${System.currentTimeMillis()}.jpg"
                     if (Backend.upload("sightings/$path", jpg, "image/jpeg")) photoPath = path
                 }
             }

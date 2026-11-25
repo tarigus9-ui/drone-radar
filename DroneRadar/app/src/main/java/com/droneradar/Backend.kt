@@ -38,13 +38,21 @@ object Backend {
     private const val MAX_QUEUE = 1000
     private const val RESEND_MS = 5_000L   // same drone: at most one update every 5 s
 
-    val url: String get() = BuildConfig.SUPABASE_URL.trimEnd('/')
-    private val anonKey: String get() = BuildConfig.SUPABASE_ANON_KEY
+    private val cfg: ServerConfig.Cfg? get() = if (::app.isInitialized) ServerConfig.current(app) else null
+    val url: String get() = cfg?.url?.trimEnd('/') ?: ""
+    private val anonKey: String get() = cfg?.key ?: ""
     val isConfigured: Boolean get() = url.startsWith("https://") && anonKey.isNotBlank()
+    val serverName: String? get() = cfg?.name
 
     private lateinit var app: Context
-    private val http = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS).readTimeout(20, TimeUnit.SECONDS).build()
+    private var httpVersion = -1
+    private var httpClient: OkHttpClient = OkHttpClient()
+    /** Rebuilt when the customer server (or its certificate pin) changes. */
+    private val http: OkHttpClient
+        @Synchronized get() {
+            if (httpVersion != ServerConfig.version) { httpClient = ServerConfig.httpClient(cfg); httpVersion = ServerConfig.version }
+            return httpClient
+        }
     private val JSON = "application/json".toMediaType()
 
     private val queue = ArrayList<JSONObject>()
@@ -66,7 +74,35 @@ object Backend {
         publish()
     }
 
-    private fun prefs() = app.getSharedPreferences("backend", Context.MODE_PRIVATE)
+    @Volatile private var securePrefs: android.content.SharedPreferences? = null
+    /** Session tokens live in encrypted storage (moved once from the old plain file). */
+    private fun prefs(): android.content.SharedPreferences {
+        securePrefs?.let { return it }
+        synchronized(this) {
+            securePrefs?.let { return it }
+            val sp = ServerConfig.securePrefs(app, "backend")
+            if (!sp.getBoolean("migrated", false)) {
+                val old = app.getSharedPreferences("backend", Context.MODE_PRIVATE)
+                val ed = sp.edit()
+                for (k in listOf("access", "refresh", "email", "who", "device_id")) old.getString(k, null)?.let { ed.putString(k, it) }
+                if (old.contains("exp")) ed.putLong("exp", old.getLong("exp", 0))
+                ed.putBoolean("migrated", true).apply()
+                old.edit().remove("access").remove("refresh").remove("exp").remove("email").remove("who").remove("device_id").apply()
+            }
+            securePrefs = sp
+            return sp
+        }
+    }
+
+    /** Switch to another customer server: sign out and drop everything of the old one. */
+    fun switchServer(c: ServerConfig.Cfg?) {
+        logout()
+        synchronized(queue) { queue.clear(); saveQueue() }
+        prefs().edit().remove("pending_invite").apply()
+        if (c == null) ServerConfig.clear(app) else ServerConfig.save(app, c)
+        lastError = null
+        publish()
+    }
     val isLoggedIn: Boolean get() = ::app.isInitialized && prefs().getString("refresh", null) != null
     val email: String? get() = prefs().getString("email", null)
 
@@ -83,6 +119,7 @@ object Backend {
         return try {
             val res = authRequest("password", body)
             saveSession(res, email.trim())
+            redeemPendingInvite()?.let { lastError = it; publish() }
             null
         } catch (e: Exception) {
             Log.w(TAG, "login", e)
@@ -99,10 +136,13 @@ object Backend {
         publish()
     }
 
-    /** Blocking. New staff create their own account; the admin then attaches them to the company. */
-    fun signUp(email: String, password: String): String? {
+    /** Blocking. New staff create their account with the one-time invite code from their admin. */
+    fun signUp(email: String, password: String, invite: String, fullName: String?): String? {
         if (!isConfigured) return "السيرفر غير مُعدّ في هذه النسخة"
-        if (password.length < 6) return "كلمة المرور 6 أحرف على الأقل"
+        if (password.length < 8) return "كلمة المرور 8 أحرف على الأقل"
+        val code = invite.uppercase().filter { it.isLetterOrDigit() }
+        if (code.length != 10) return "أدخل رمز الدعوة (10 أحرف) من مديرك"
+        prefs().edit().putString("pending_invite", code).putString("pending_name", fullName?.trim().orEmpty()).apply()
         val req = Request.Builder()
             .url("$url/auth/v1/signup")
             .header("apikey", anonKey)
@@ -112,18 +152,33 @@ object Backend {
             http.newCall(req).execute().use { r ->
                 val txt = r.body?.string().orEmpty()
                 if (!r.isSuccessful) {
-                    return if (txt.contains("already", true)) "هذا البريد مسجّل مسبقاً — استخدم دخول" else "تعذّر إنشاء الحساب (${r.code})"
+                    // Existing account (e.g. a code that failed earlier): log in and use the new code.
+                    return if (txt.contains("already", true)) login(email, password) else "تعذّر إنشاء الحساب (${r.code})"
                 }
                 val j = JSONObject(txt)
-                if (j.has("access_token")) { saveSession(j, email.trim()); null }
+                if (j.has("access_token")) { saveSession(j, email.trim()); redeemPendingInvite() }
                 else "أُنشئ الحساب — افتح بريدك لتأكيده ثم سجّل الدخول"
             }
         } catch (e: Exception) { "تعذّر الاتصال بالسيرفر" }
     }
 
+    /** Blocking. Joins the company with a stored invite code (after sign-up / first login). */
+    fun redeemPendingInvite(): String? {
+        val code = prefs().getString("pending_invite", null) ?: return null
+        val name = prefs().getString("pending_name", null)
+        val (c, body) = call("POST", "/rest/v1/rpc/redeem_invite",
+            JSONObject().put("p_code", code).put("p_full_name", name ?: JSONObject.NULL).toString())
+        if (c in 200..299 || body.contains("already belongs")) {
+            prefs().edit().remove("pending_invite").remove("pending_name").apply()
+            return null
+        }
+        prefs().edit().remove("pending_invite").remove("pending_name").apply()
+        return if (c == 0) "تعذّر الاتصال بالسيرفر" else "رمز الدعوة غير صحيح أو منتهي — اطلب رمزاً جديداً"
+    }
+
     // ------------------------------------------------------------------ profile / role
     data class Who(val hasProfile: Boolean, val role: String?, val name: String?, val company: String?,
-                   val region: String?, val site: String?)
+                   val region: String?, val site: String?, val companyId: String? = null)
 
     val who: Who?
         get() = prefs().getString("who", null)?.let { parseWho(JSONObject(it)) }
@@ -133,7 +188,7 @@ object Backend {
 
     private fun parseWho(j: JSONObject) = Who(
         j.optBoolean("has_profile"), j.optStr("role"), j.optStr("full_name"),
-        j.optStr("company"), j.optStr("region"), j.optStr("site"))
+        j.optStr("company"), j.optStr("region"), j.optStr("site"), j.optStr("company_id"))
 
     private fun JSONObject.optStr(k: String): String? = if (isNull(k)) null else optString(k, "").ifBlank { null }
 
@@ -214,6 +269,8 @@ object Backend {
         body.contains("managers only") -> "هذه العملية للمدراء فقط"
         body.contains("own site only") -> "مدير المنشأة يضيف لمنشأته فقط"
         body.contains("serial required") -> "أدخل الرقم التسلسلي"
+        body.contains("region managers") -> "مدير الإقليم يضيف لمنشأة من إقليمه فقط"
+        body.contains("rate limit") -> "إرسال كثير جداً — انتظر دقيقة"
         else -> "خطأ من السيرفر ($code)"
     }
 

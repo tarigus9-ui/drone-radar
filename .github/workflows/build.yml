@@ -14,13 +14,41 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
-
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
-      - name: Build debug APK
-        run: gradle :app:assembleDebug --no-daemon
+
+      # The release key is stored encrypted in the repo; ONE GitHub secret (DR_SECRET) unlocks it.
+      - name: Unlock release key
+        env:
+          DR_SECRET: ${{ secrets.DR_SECRET }}
+        run: |
+          if [ -z "$DR_SECRET" ]; then
+            echo "::warning::DR_SECRET is not set — building TEST versions with a temporary key (cannot update over signed versions)."
+            exit 0
+          fi
+          openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -in signing/release.jks.enc -out "$RUNNER_TEMP/release.jks" -pass env:DR_SECRET
+          {
+            echo "DR_KEYSTORE=$RUNNER_TEMP/release.jks"
+            echo "DR_KEYSTORE_PASSWORD=$DR_SECRET"
+            echo "DR_KEY_PASSWORD=$DR_SECRET"
+            echo "DR_KEY_ALIAS=droneradar"
+          } >> "$GITHUB_ENV"
+
+      - name: Build signed release APKs
+        if: env.DR_KEYSTORE != ''
+        run: gradle :app:assembleDemoRelease :app:assembleClientRelease --no-daemon
+      - name: Build test APKs (no release key)
+        if: env.DR_KEYSTORE == ''
+        run: gradle :app:assembleDemoDebug :app:assembleClientDebug --no-daemon
+
+      - name: Collect APKs
+        run: |
+          mkdir -p out
+          find app/build/outputs/apk -name '*.apk' -exec cp {} out/ \;
+          rm -f "$RUNNER_TEMP/release.jks"
+          ls -l out
       - uses: actions/upload-artifact@v4
         with:
           name: DroneRadar-apk
-          path: DroneRadar/app/build/outputs/apk/debug/app-debug.apk
+          path: DroneRadar/out/*.apk
