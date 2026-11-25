@@ -24,7 +24,9 @@ data class DroneInfo(
     var opTrail: List<Pair<Double, Double>> = emptyList(),     // live path of the operator
     var droneTrail: List<Pair<Double, Double>> = emptyList(),  // live path of the drone
     var idType: Int? = null,                 // Basic ID type (1 = serial number)
-    var spoof: Set<String> = emptySet(),     // forgery signs (SpoofCheck / server)
+    var spoof: Set<String> = emptySet(),     // forgery signs of the CURRENT state (SpoofCheck / server)
+    var everFlagged: Set<String> = emptySet(), // every sign ever seen for this drone (history only)
+    var ts10: Int? = null,                   // Location message time: tenths of a second since the hour
     var spoofAlerted: Boolean = false,
     var posTime: Long = 0L,                  // when lat/lon last changed
 ) {
@@ -64,14 +66,14 @@ object DroneRepository {
     @Synchronized
     fun update(key: String, source: String, rssi: Int, decode: (DroneInfo) -> Boolean): Pair<DroneInfo, Boolean>? {
         val d = map[key] ?: DroneInfo(key)
-        val pLat = d.lat; val pLon = d.lon; val pT = d.posTime
+        val pLat = d.lat; val pLon = d.lon; val pT = d.posTime; val pTs = d.ts10
         if (!decode(d)) return null
         val now = System.currentTimeMillis()
         d.source = source; d.rssi = rssi; d.lastSeen = now
         if (d.lat != pLat || d.lon != pLon) {
-            SpoofCheck.local(d, pLat, pLon, if (pT == 0L) now else pT, Backend.myLocation)
+            SpoofCheck.local(d, pLat, pLon, if (pT == 0L) now else pT, pTs, Backend.myLocation)
             d.posTime = now
-        } else SpoofCheck.local(d, null, null, now, Backend.myLocation)
+        } else SpoofCheck.local(d, null, null, now, null, Backend.myLocation)
         recordTrail(d)
         map[key] = d
         // Merge records that share a serial (same drone seen on BLE + Wi-Fi)

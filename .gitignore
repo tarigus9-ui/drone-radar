@@ -1,0 +1,9 @@
+
+# signing material never goes in the repository
+*.jks
+*.keystore
+*.p12
+*.enc
+# python bytecode
+__pycache__/
+*.pyc

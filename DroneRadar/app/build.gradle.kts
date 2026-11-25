@@ -9,15 +9,15 @@ android {
         applicationId = "com.droneradar"
         minSdk = 26          // Android 8.0 (مطلوب لـ Wi-Fi NaN)
         targetSdk = 35
-        versionCode = 4
-        versionName = "2.1"
+        versionCode = 5
+        versionName = "2.2"
         // Google Maps (satellite). Empty → the app falls back to OpenStreetMap.
         val mapsKey = (project.findProperty("MAPS_API_KEY") ?: "").toString()
         buildConfigField("String", "MAPS_API_KEY", "\"$mapsKey\"")
         manifestPlaceholders["MAPS_API_KEY"] = mapsKey
     }
     buildFeatures { buildConfig = true }
-    // Private release key: provided by CI secrets (never stored in the repository).
+    // Private release key: written by CI from GitHub secrets for one step only (never stored in the repository).
     val ksPath = System.getenv("DR_KEYSTORE") ?: ""
     signingConfigs {
         create("release") {
@@ -49,6 +49,7 @@ android {
             buildConfigField("String", "SUPABASE_ANON_KEY", "\"\"")
         }
     }
+    testOptions { unitTests.isReturnDefaultValues = true }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -67,6 +68,7 @@ dependencies {
     implementation("androidx.camera:camera-camera2:$camerax")
     implementation("androidx.camera:camera-lifecycle:$camerax")
     implementation("androidx.camera:camera-view:$camerax")
+    testImplementation("junit:junit:4.13.2")
     implementation("com.google.zxing:core:3.5.3")                       // QR إعداد السيرفر (بدون خدمات Google)
     implementation("androidx.security:security-crypto:1.1.0-alpha06")   // تشفير جلسة الدخول على الهاتف
 }

@@ -30,16 +30,43 @@ object SpoofCheck {
     }
 
     /** Called after each decoded update. prev* = the drone position before this update. */
-    fun local(d: DroneInfo, prevLat: Double?, prevLon: Double?, prevTime: Long, me: Location?) {
-        val f = d.spoof.toMutableSet()
+    /** Fastest plausible drone, m/s, and position uncertainty, m, for the jump test. */
+    private const val MAX_SPEED = 70.0
+    private const val POS_UNCERT = 30.0
+
+    /**
+     * Seconds between two positions: from the drone's own Location timestamps when both are
+     * present (immune to radio / processing delay), else from the phone's receive times.
+     */
+    fun interval(prevTs: Int?, ts: Int?, prevTime: Long, now: Long): Double {
+        if (prevTs != null && ts != null) {
+            val diff = (ts - prevTs + 36_000) % 36_000          // wraps at the full hour
+            val recv = (now - prevTime) / 1000.0
+            // a timestamp that does not move while time clearly passed is broken: use receive time
+            val stuck = diff == 0 && recv > 1.5
+            if (!stuck && diff in 0..6_000) return diff / 10.0   // up to 10 minutes apart
+        }
+        return ((now - prevTime) / 1000.0).coerceAtLeast(0.0)
+    }
+
+    /** True if moving [dist] metres in [secs] seconds is not physically plausible. */
+    fun impossibleJump(dist: Double, secs: Double): Boolean = dist > MAX_SPEED * secs + POS_UNCERT
+
+    /**
+     * Called after each decoded update. prev* = the drone position before this update.
+     * Flags describe THIS update only: a bad reading no longer marks the drone forever
+     * (the history keeps them in everFlagged).
+     */
+    fun local(d: DroneInfo, prevLat: Double?, prevLon: Double?, prevTime: Long, prevTs: Int?, me: Location?) {
+        val f = mutableSetOf<String>()
         d.speed?.let { if (it > 70f) f += "impossible_speed" }
         d.height?.let { if (it > 1500f || it < -100f) f += "impossible_alt" }
 
         val lat = d.lat; val lon = d.lon
         if (lat != null && lon != null && prevLat != null && prevLon != null) {
             val dist = meters(lat, lon, prevLat, prevLon)
-            val secs = ((System.currentTimeMillis() - prevTime) / 1000.0).coerceAtLeast(1.0)
-            if (dist > 50 && dist / secs > 70) f += "impossible_speed"
+            val secs = interval(prevTs, d.ts10, prevTime, System.currentTimeMillis())
+            if (impossibleJump(dist, secs)) f += "impossible_speed"
         }
         if (lat != null && lon != null && me != null && d.rssi < 0) {
             val dg = meters(lat, lon, me.latitude, me.longitude)
@@ -49,10 +76,10 @@ object SpoofCheck {
         val oLat = d.opLat; val oLon = d.opLon
         if (lat != null && lon != null && oLat != null && oLon != null && meters(lat, lon, oLat, oLon) > 15_000) f += "operator_far"
         val serial = d.serial
-        if (d.idType == 1 && serial != null && !cta2063Ok(serial)) f += "bad_serial"
-        if (GlobalId.badId(d)) f += "bad_operator_id"
+        f += GlobalId.idFlags(d)
         if (serial != null && f.any { it in STRONG } && Whitelist.contains(serial, d.operatorId)) f += "whitelist_spoof"
         d.spoof = f
+        d.everFlagged = d.everFlagged + f
     }
 
     fun fromJson(a: JSONArray?): Set<String> =
