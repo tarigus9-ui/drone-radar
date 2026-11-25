@@ -299,7 +299,12 @@ object Backend {
         if (!::app.isInitialized || !isConfigured || !isLoggedIn) return
         val batch: List<JSONObject> = synchronized(queue) { queue.take(100) }
         if (batch.isEmpty()) return
-        val ok = post("/rest/v1/detections", JSONArray(batch).toString(), "return=minimal")
+        // PostgREST bulk insert rejects (400) rows whose key sets differ, so give every row
+        // the same keys, using null where a row lacks a value.
+        val keys = batch.flatMap { it.keys().asSequence().toList() }.toSet()
+        val rows = JSONArray()
+        batch.forEach { r -> rows.put(JSONObject().apply { keys.forEach { k -> put(k, r.opt(k) ?: JSONObject.NULL) } }) }
+        val ok = post("/rest/v1/detections", rows.toString(), "return=minimal")
         if (ok) {
             synchronized(queue) { repeat(batch.size) { if (queue.isNotEmpty()) queue.removeAt(0) }; saveQueue() }
             sentCount += batch.size
@@ -343,7 +348,11 @@ object Backend {
                 when {
                     r.isSuccessful -> true
                     r.code == 401 && !retried -> { accessToken(forceRefresh = true); post(path, json, prefer, true) }
-                    else -> { lastError = "السيرفر ${r.code}"; Log.w(TAG, "post $path ${r.code} ${r.body?.string()}"); false }
+                    else -> {
+                        val msg = runCatching { JSONObject(r.body?.string() ?: "").optString("message") }.getOrNull().orEmpty()
+                        lastError = "السيرفر ${r.code}" + if (msg.isNotBlank()) " — ${msg.take(80)}" else ""
+                        Log.w(TAG, "post $path ${r.code} $msg"); false
+                    }
                 }
             }
         } catch (e: Exception) {

@@ -3,6 +3,7 @@ package com.droneradar
 import android.annotation.SuppressLint
 import android.app.PendingIntent
 import android.app.Service
+import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager
 import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanFilter
@@ -50,6 +51,7 @@ class ScanService : Service() {
         val type = if (Build.VERSION.SDK_INT >= 29) ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION else 0
         ServiceCompat.startForeground(this, Alerts.SERVICE_NOTIF_ID, serviceNotification(0), type)
         startBle()
+        registerReceiver(btStateReceiver, IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED))
         startWifiBeacon()
         startNan()
         scope.launch {
@@ -80,6 +82,7 @@ class ScanService : Service() {
         Backend.stopLocation(this)
         runCatching { bleScanner()?.stopScan(bleCallback) }
         runCatching { unregisterReceiver(wifiReceiver) }
+        runCatching { unregisterReceiver(btStateReceiver) }
         awareSession?.close()
         super.onDestroy()
     }
@@ -108,6 +111,16 @@ class ScanService : Service() {
         override fun onBatchScanResults(results: MutableList<ScanResult>) =
             results.forEach { Alerts.handleBle(this@ScanService, it) }
         override fun onScanFailed(errorCode: Int) { Log.w(TAG, "BLE scan failed $errorCode") }
+    }
+
+    /** Bluetooth was off when we started (or got toggled): restart both scans when it comes back on. */
+    private val btStateReceiver = object : BroadcastReceiver() {
+        override fun onReceive(c: Context, i: Intent) {
+            if (i.getIntExtra(BluetoothAdapter.EXTRA_STATE, -1) == BluetoothAdapter.STATE_ON) {
+                runCatching { bleScanner()?.stopScan(bleCallback) }
+                startBle()
+            }
+        }
     }
 
     private fun startBle() {
