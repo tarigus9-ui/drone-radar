@@ -38,7 +38,7 @@ object ServerConfig {
             EncryptedSharedPreferences.create(app, "${name}_secure", mk,
                 EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
                 EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM)
-        }.getOrElse { app.getSharedPreferences(name, Context.MODE_PRIVATE) }
+        }.getOrElse { app.getSharedPreferences("${name}_plain", Context.MODE_PRIVATE) }
     }
 
     private fun prefs(ctx: Context) = securePrefs(ctx, "server")
@@ -101,7 +101,9 @@ object ServerConfig {
             .apply { init(null as KeyStore?) }.trustManagers.filterIsInstance<X509TrustManager>().first()
 
         override fun checkServerTrusted(chain: Array<X509Certificate>, authType: String) {
-            if (chain.none { spkiPin(it) == pin }) throw CertificateException("server key does not match setup code")
+            // Only the leaf: the TLS handshake proves possession of chain[0]'s key, nothing else.
+            val leaf = chain.firstOrNull() ?: throw CertificateException("empty chain")
+            if (spkiPin(leaf) != pin) throw CertificateException("server key does not match setup code")
         }
         override fun checkClientTrusted(chain: Array<X509Certificate>, authType: String) = system.checkClientTrusted(chain, authType)
         override fun getAcceptedIssuers(): Array<X509Certificate> = system.acceptedIssuers

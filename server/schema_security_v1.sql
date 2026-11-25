@@ -205,6 +205,10 @@ begin
   return nid;
 end $$;
 
+-- The table itself is no longer readable directly (guards would see every serial).
+drop policy if exists "company whitelist" on public.whitelist;
+revoke select on public.whitelist from authenticated, anon;
+
 -- Managers see serials; guards only get one-way hashes (enough for the phone to stay quiet).
 drop function if exists public.list_whitelist();
 create or replace function public.list_whitelist()
@@ -252,9 +256,21 @@ create policy "role reads sighting photos" on storage.objects for select to auth
               or (public.my_profile()).role in ('admin', 'region_manager', 'site_manager')));
 
 -- ---------------------------------------------------------------- function privileges
--- Nothing in public is callable without login; internal helpers are not callable at all.
-revoke execute on all functions in schema public from public, anon;
-grant  execute on all functions in schema public to authenticated, service_role;
+-- Our functions are not callable without login; internal helpers are not callable at all.
+-- (Only DroneRadar's own functions — extension functions such as PostGIS are left untouched.)
+do $$
+declare f record;
+begin
+  for f in
+    select p.oid::regprocedure as sig
+      from pg_proc p
+     where p.pronamespace = 'public'::regnamespace
+       and not exists (select 1 from pg_depend d where d.objid = p.oid and d.deptype = 'e')
+  loop
+    execute format('revoke execute on function %s from public, anon', f.sig);
+    execute format('grant execute on function %s to authenticated, service_role', f.sig);
+  end loop;
+end $$;
 revoke execute on function
   public.assert_admin(),
   public.is_whitelisted(uuid, text, uuid, text),
@@ -264,4 +280,3 @@ revoke execute on function
   public.devices_before_write(),
   public.sightings_before_insert()
 from authenticated;
-alter default privileges in schema public revoke execute on functions from public, anon;

@@ -40,6 +40,9 @@ SLUG=$(echo "$NAME" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | sed 's/
 [ -n "$SLUG" ] || SLUG="customer"
 DIR="/opt/droneradar/$SLUG"
 [ -e "$DIR/.env" ] && die "$DIR already exists — this customer is already installed"
+for other in /opt/droneradar/*/.env; do
+  [ -e "$other" ] && die "Another customer is already installed on this server ($other). Use one server per customer."
+done
 
 say "1/7  Loading Docker images from the USB"
 if [ -f "$SRC/images.tar.gz" ]; then
@@ -54,7 +57,7 @@ sh utils/generate-keys.sh --update-env >/dev/null
 setenv() { if grep -q "^$1=" .env; then sed -i "s|^$1=.*|$1=$2|" .env; else echo "$1=$2" >> .env; fi; }
 setenv COMPOSE_FILE "docker-compose.yml:docker-compose.caddy.yml:docker-compose.droneradar.yml"
 setenv SUPABASE_PUBLIC_URL "https://$HOST"
-setenv API_EXTERNAL_URL "https://$HOST"
+setenv API_EXTERNAL_URL "https://$HOST/auth/v1"
 setenv SITE_URL "https://$HOST"
 setenv PROXY_DOMAIN "$HOST"
 setenv ENABLE_EMAIL_SIGNUP true          # staff join with an invite code from their admin
@@ -63,7 +66,13 @@ setenv ENABLE_ANONYMOUS_USERS false
 setenv ENABLE_PHONE_SIGNUP false
 setenv DASHBOARD_USERNAME droneradar
 chmod 600 .env
-set -a; . ./.env; set +a
+envget() { grep "^$1=" .env | head -1 | cut -d= -f2-; }   # .env is not a shell script (values with spaces)
+ANON_KEY=$(envget ANON_KEY); SERVICE_ROLE_KEY=$(envget SERVICE_ROLE_KEY)
+POSTGRES_PASSWORD=$(envget POSTGRES_PASSWORD); DASHBOARD_PASSWORD=$(envget DASHBOARD_PASSWORD)
+[ -n "$ANON_KEY" ] && [ -n "$SERVICE_ROLE_KEY" ] && [ -n "$POSTGRES_PASSWORD" ] || die "key generation failed"
+# secrets go to curl in a private header file, never on the command line (visible in ps)
+HDR=$(mktemp); chmod 600 "$HDR"; trap 'rm -f "$HDR"' EXIT
+printf 'apikey: %s\nAuthorization: Bearer %s\n' "$SERVICE_ROLE_KEY" "$SERVICE_ROLE_KEY" > "$HDR"
 
 say "3/7  Own HTTPS certificate for $HOST (10 years)"
 mkdir -p volumes/proxy/caddy/certs
@@ -96,12 +105,14 @@ CADDY
 
 say "4/7  Starting the server (first start takes a few minutes)"
 docker compose -p "dr-$SLUG" up -d
-api() { curl -sk --max-time 5 "https://127.0.0.1$1" -H "apikey: $SERVICE_ROLE_KEY" -H "Authorization: Bearer $SERVICE_ROLE_KEY" "${@:2}"; }
-for i in $(seq 1 90); do
-  code=$(curl -sk -o /dev/null -w '%{http_code}' --max-time 5 "https://127.0.0.1/auth/v1/health" -H "apikey: $ANON_KEY" || true)
-  [ "$code" = 200 ] && break; sleep 5
+api() { curl -sk --max-time 10 "https://127.0.0.1$1" -H "@$HDR" "${@:2}"; }
+code=0
+for i in $(seq 1 120); do
+  code=$(curl -sk -o /dev/null -w '%{http_code}' --max-time 5 "https://127.0.0.1/auth/v1/health" -H "@$HDR" || true)
+  st=$(docker inspect -f '{{.State.Health.Status}}' supabase-storage 2>/dev/null || echo none)
+  [ "$code" = 200 ] && [ "$st" = healthy ] && break; sleep 5
 done
-[ "$code" = 200 ] || die "Server did not become ready — check: docker compose -p dr-$SLUG ps"
+[ "$code" = 200 ] && [ "$st" = healthy ] || die "Server did not become ready — check: docker compose -p dr-$SLUG ps"
 
 say "5/7  DroneRadar database"
 psqlc() { docker compose -p "dr-$SLUG" exec -T -e PGPASSWORD="$POSTGRES_PASSWORD" db \
@@ -110,9 +121,11 @@ for f in "$SRC"/sql/*.sql; do echo "   $(basename "$f")"; psqlc < "$f" >/dev/nul
 
 say "6/7  Company and first admin"
 ADMIN_PASS=$(openssl rand -base64 18 | tr -d '/+=' | cut -c1-16)
-uid=$(api /auth/v1/admin/users -X POST -H 'Content-Type: application/json' \
-      -d "{\"email\":\"$ADMIN\",\"password\":\"$ADMIN_PASS\",\"email_confirm\":true}" \
-      | sed -n 's/.*"id":"\([0-9a-f-]\{36\}\)".*/\1/p' | head -1)
+BODY=$(mktemp); chmod 600 "$BODY"
+printf '{"email":"%s","password":"%s","email_confirm":true}' "$ADMIN" "$ADMIN_PASS" > "$BODY"
+uid=$(api /auth/v1/admin/users -X POST -H 'Content-Type: application/json' --data-binary "@$BODY" \
+      | grep -o '"id":"[0-9a-f-]\{36\}"' | head -1 | cut -d'"' -f4)
+rm -f "$BODY"
 [ -n "$uid" ] || die "Could not create the admin account"
 NAME_SQL=$(printf "%s" "$NAME" | sed "s/'/''/g"); REGION_SQL=$(printf "%s" "$REGION" | sed "s/'/''/g")
 psqlc <<SQL

@@ -20,6 +20,7 @@ jobs:
 
       # The release key is stored encrypted in the repo; ONE GitHub secret (DR_SECRET) unlocks it.
       - name: Unlock release key
+        if: github.ref == 'refs/heads/main'
         env:
           DR_SECRET: ${{ secrets.DR_SECRET }}
         run: |
