@@ -7,6 +7,11 @@ import androidx.core.os.LocaleListCompat
 
 /** In-app language (independent of the phone language). Saved by AppCompat; layouts flip RTL/LTR. */
 object Lang {
+    /** "No ID" in the app's current language, for places without a Context (DroneInfo.label). */
+    val noId: String get() {
+        val tag = AppCompatDelegate.getApplicationLocales().toLanguageTags().ifEmpty { java.util.Locale.getDefault().language }
+        return if (tag.startsWith("en")) "No ID" else "بلا هوية"
+    }
     private val choices = listOf("ar" to "العربية", "en" to "English")
 
     fun pick(a: Activity) {

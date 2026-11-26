@@ -252,4 +252,10 @@
     <string name="wl_default">Authorized</string>
     <string name="unit_m">m</string>
     <string name="language">🌐 Language</string>
+    <string name="no_id">No ID</string>
+    <string name="no_id_addr">No ID · sender address %1$s</string>
+    <string name="rp_unidentified">+%1$d signals without ID (not counted as drones)</string>
+    <string name="rp_pos">Last position</string>
+    <string name="pos_drone">📍 Drone: %1$s</string>
+    <string name="pos_op">🧍 Operator: %1$s</string>
 </resources>
