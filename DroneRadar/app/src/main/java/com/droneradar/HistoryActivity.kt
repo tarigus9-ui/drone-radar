@@ -161,7 +161,7 @@ class HistoryActivity : AppCompatActivity() {
     }
 
     private fun row(r: JSONObject): View {
-        val serial = r.str("serial") ?: r.optString("drone")
+        val serial = r.str("serial") ?: "⛔ " + getString(R.string.no_id_addr, r.optString("drone"))
         val site = r.str("site") ?: getString(R.string.outside_sites)
         val start = local(r.optString("started")); val end = local(r.optString("ended"))
         val h = if (r.isNull("max_height")) "—" else "%.0f".format(Locale.US, r.optDouble("max_height"))
@@ -204,7 +204,7 @@ class HistoryActivity : AppCompatActivity() {
         drone.lastOrNull()?.let { m.addDot(L_TRACK, it.first, it.second, Color.rgb(229, 57, 53), 20, getString(R.string.track_end), r.optString("drone")) }
         op.lastOrNull()?.let { m.addDot(L_TRACK, it.first, it.second, Color.rgb(0, 200, 83), 18, getString(R.string.operator), r.str("operator_id") ?: "") }
         m.fit(drone + op)
-        info.text = getString(R.string.track_info, r.str("serial") ?: r.optString("drone"), drone.size)
+        info.text = getString(R.string.track_info, r.str("serial") ?: getString(R.string.no_id_addr, r.optString("drone")), drone.size)
     }
 
     private fun iso(ms: Long) = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US)

@@ -170,7 +170,7 @@ class ReportPdf(baseCtx: Context, private val j: JSONObject, private val periodL
     private fun kpis() {
         val items = listOf(
             ctx.getString(R.string.rp_k_incidents) to j.optInt("incidents"),
-            ctx.getString(R.string.rp_k_drones) to j.optInt("drones"),
+            (ctx.getString(R.string.rp_k_drones) + j.optInt("unidentified").let { if (it > 0) "\n" + ctx.getString(R.string.rp_unidentified, it) else "" }) to j.optInt("drones"),
             ctx.getString(R.string.rp_k_suspicious) to j.optInt("suspicious"),
             ctx.getString(R.string.rp_k_authorized) to j.optInt("authorized"),
             ctx.getString(R.string.rp_k_opknown) to j.optInt("op_known"),
@@ -276,12 +276,18 @@ class ReportPdf(baseCtx: Context, private val j: JSONObject, private val periodL
         val rows = items.map {
             listOf(local(it.optString("started")) + (if (rtl) " ← " else " → ") + local(it.optString("ended")).substringAfter(' '),
                 it.optString("site").ifBlank { ctx.getString(R.string.outside_sites) }.let { s -> if (s == "null") ctx.getString(R.string.outside_sites) else s },
-                it.optString("serial"),
+                if (it.isNull("serial")) ctx.getString(R.string.no_id_addr, it.optString("key")) else it.optString("serial"),
+                pos(it, "lat", "lon") + pos(it, "op_lat", "op_lon").let { o -> if (o == "—") "" else "\n🧍 $o" },
                 status(it.optBoolean("sus"), it.optBoolean("auth")) + if (it.optBoolean("op")) " • " + ctx.getString(R.string.rp_op) else "")
         }
         table(listOf(ctx.getString(R.string.rp_time), ctx.getString(R.string.rp_site), ctx.getString(R.string.rp_serial),
-            ctx.getString(R.string.rp_status)), rows, listOf(1.8f, 1.8f, 2.4f, 1.6f)) { i ->
+            ctx.getString(R.string.rp_pos), ctx.getString(R.string.rp_status)), rows, listOf(1.6f, 1.4f, 2.0f, 1.9f, 1.4f)) { i ->
             if (items[i].optBoolean("sus")) Color.rgb(243, 229, 245) else null
         }
     }
+
+    /** Numeric position, 6 decimals (~0.1 m), as evidence; "—" when not broadcast. */
+    private fun pos(o: JSONObject, la: String, lo: String): String =
+        if (o.isNull(la) || o.isNull(lo)) "—"
+        else String.format(Locale.US, "%.6f, %.6f", o.optDouble(la), o.optDouble(lo))
 }

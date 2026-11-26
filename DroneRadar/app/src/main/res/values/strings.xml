@@ -257,4 +257,10 @@
     <string name="wl_default">مصرّح</string>
     <string name="unit_m">م</string>
     <string name="language">🌐 اللغة</string>
+    <string name="no_id">بلا هوية</string>
+    <string name="no_id_addr">بلا هوية · عنوان الإرسال %1$s</string>
+    <string name="rp_unidentified">+%1$d إشارة بلا هوية (لا تُعدّ درونًا)</string>
+    <string name="rp_pos">آخر موقع</string>
+    <string name="pos_drone">📍 الدرون: %1$s</string>
+    <string name="pos_op">🧍 المشغل: %1$s</string>
 </resources>

@@ -30,7 +30,8 @@ data class DroneInfo(
     var spoofAlerted: Boolean = false,
     var posTime: Long = 0L,                  // when lat/lon last changed
 ) {
-    val label: String get() = serial ?: operatorId ?: key
+    /** Serial or operator ID. A radio address (MAC / NaN peer) is NOT an identity: it is shown as "no ID". */
+    val label: String get() = serial ?: operatorId ?: ("⛔ " + Lang.noId + " · …" + key.takeLast(5))
 }
 
 /** Process-wide store shared by the scanner service and the map screen. */

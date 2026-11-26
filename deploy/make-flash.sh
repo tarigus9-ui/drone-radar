@@ -38,7 +38,7 @@ echo "3/4  DroneRadar database + scripts"
 rm -rf "$D/sql"; mkdir -p "$D/sql"
 n=10
 for f in schema schema_phase2 schema_phase3 schema_sightings_whitelist schema_spoof schema_reports \
-         schema_security_v1 schema_retention schema_global_v1 schema_fixes_v2; do
+         schema_security_v1 schema_retention schema_global_v1 schema_fixes_v2 schema_fixes_v3; do
   cp "$HERE/../server/$f.sql" "$D/sql/${n}_$f.sql"; n=$((n + 10))
 done
 cp "$HERE/install.sh" "$HERE/backup.sh" "$HERE/README_AR.md" "$D/"
